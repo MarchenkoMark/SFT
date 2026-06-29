@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\SnakeForTwo.Game.Application\SnakeForTwo.Game.Application.csproj" />
+    <ProjectReference Include="..\SnakeForTwo.Infrastructure\SnakeForTwo.Infrastructure.csproj" />
+    <ProjectReference Include="..\SnakeForTwo.Contracts\SnakeForTwo.Contracts.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

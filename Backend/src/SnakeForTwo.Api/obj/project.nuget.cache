@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "lLdSY2io7XE=",
+  "dgSpecHash": "6DLLFpjKa4U=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Api\\SnakeForTwo.Api.csproj",
+  "projectFilePath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Api\\SnakeForTwo.Api.csproj",
   "expectedPackageFiles": [],
   "logs": []
 }

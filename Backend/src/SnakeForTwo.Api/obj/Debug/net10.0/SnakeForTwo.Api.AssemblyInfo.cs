@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SnakeForTwo.Api")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a4c9dee0a4972aa47f88545a1ab9e4d4fcf25a01")]
 [assembly: System.Reflection.AssemblyProductAttribute("SnakeForTwo.Api")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SnakeForTwo.Api")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

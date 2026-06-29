@@ -36,3 +36,4 @@ C:\Repos\SFT\Backend\src\SnakeForTwo.Infrastructure\obj\Debug\net10.0\SnakeForTw
 C:\Repos\SFT\Backend\src\SnakeForTwo.Infrastructure\obj\Debug\net10.0\refint\SnakeForTwo.Infrastructure.dll
 C:\Repos\SFT\Backend\src\SnakeForTwo.Infrastructure\obj\Debug\net10.0\SnakeForTwo.Infrastructure.pdb
 C:\Repos\SFT\Backend\src\SnakeForTwo.Infrastructure\obj\Debug\net10.0\ref\SnakeForTwo.Infrastructure.dll
+C:\Repos\SFT\Backend\src\SnakeForTwo.Infrastructure\obj\Debug\net10.0\SnakeForTwo.Infrastructure.sourcelink.json

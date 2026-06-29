@@ -74,3 +74,4 @@ C:\Repos\SFT\Backend\src\SnakeForTwo.Api\obj\Debug\net10.0\swae.build.ex.cache
 C:\Repos\SFT\Backend\src\SnakeForTwo.Api\obj\Debug\net10.0\SnakeFor.76C593DA.Up2Date
 C:\Repos\SFT\Backend\src\SnakeForTwo.Api\obj\Debug\net10.0\SnakeForTwo.Api.genruntimeconfig.cache
 C:\Repos\SFT\Backend\src\SnakeForTwo.Api\obj\Debug\net10.0\ref\SnakeForTwo.Api.dll
+C:\Repos\SFT\Backend\src\SnakeForTwo.Api\obj\Debug\net10.0\SnakeForTwo.Api.sourcelink.json

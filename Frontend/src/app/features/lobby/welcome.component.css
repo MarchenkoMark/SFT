@@ -1,0 +1,53 @@
+.page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(100%, 420px);
+  display: grid;
+  gap: 18px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+form,
+.actions {
+  display: grid;
+  gap: 8px;
+}
+
+.join-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+input,
+button {
+  min-height: 40px;
+  font: inherit;
+}
+
+input {
+  padding: 0 10px;
+}
+
+button {
+  padding: 0 14px;
+}
+
+.muted {
+  color: #555;
+  margin: 0;
+}
+
+.error {
+  color: #9b1c1c;
+  margin: 0;
+}

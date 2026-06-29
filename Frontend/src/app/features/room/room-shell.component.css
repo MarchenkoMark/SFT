@@ -1,0 +1,52 @@
+.room-page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  gap: 18px;
+}
+
+.room-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+.muted {
+  color: #555;
+}
+
+.error {
+  color: #9b1c1c;
+}
+
+.invite {
+  display: grid;
+  gap: 8px;
+}
+
+input,
+button {
+  min-height: 40px;
+  font: inherit;
+}
+
+input {
+  padding: 0 10px;
+}
+
+button {
+  padding: 0 14px;
+}
+
+.status-panel {
+  padding: 12px;
+  border: 1px solid #ddd;
+}

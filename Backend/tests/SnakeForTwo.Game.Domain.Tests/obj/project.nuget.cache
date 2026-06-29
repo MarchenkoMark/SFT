@@ -1,8 +1,8 @@
 {
   "version": 2,
-  "dgSpecHash": "eQm7vt0M0EY=",
+  "dgSpecHash": "9chXVPAyfTU=",
   "success": true,
-  "projectFilePath": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj",
+  "projectFilePath": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj",
   "expectedPackageFiles": [
     "C:\\Users\\Mark\\.nuget\\packages\\coverlet.collector\\6.0.4\\coverlet.collector.6.0.4.nupkg.sha512",
     "C:\\Users\\Mark\\.nuget\\packages\\microsoft.codecoverage\\17.14.1\\microsoft.codecoverage.17.14.1.nupkg.sha512",

@@ -20,3 +20,4 @@ C:\Repos\SFT\Backend\src\SnakeForTwo.Game.Domain\obj\Debug\net10.0\SnakeForTwo.G
 C:\Repos\SFT\Backend\src\SnakeForTwo.Game.Domain\obj\Debug\net10.0\refint\SnakeForTwo.Game.Domain.dll
 C:\Repos\SFT\Backend\src\SnakeForTwo.Game.Domain\obj\Debug\net10.0\SnakeForTwo.Game.Domain.pdb
 C:\Repos\SFT\Backend\src\SnakeForTwo.Game.Domain\obj\Debug\net10.0\ref\SnakeForTwo.Game.Domain.dll
+C:\Repos\SFT\Backend\src\SnakeForTwo.Game.Domain\obj\Debug\net10.0\SnakeForTwo.Game.Domain.sourcelink.json

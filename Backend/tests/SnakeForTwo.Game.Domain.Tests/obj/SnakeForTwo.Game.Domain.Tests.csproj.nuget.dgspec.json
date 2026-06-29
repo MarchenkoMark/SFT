@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj": {}
+    "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj": {}
   },
   "projects": {
-    "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj": {
+    "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj",
+        "projectUniqueName": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj",
         "projectName": "SnakeForTwo.Game.Domain",
-        "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj",
+        "projectPath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj",
         "packagesPath": "C:\\Users\\Mark\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\obj\\",
+        "outputPath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -343,14 +343,14 @@
         }
       }
     },
-    "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj": {
+    "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj",
+        "projectUniqueName": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj",
         "projectName": "SnakeForTwo.Game.Domain.Tests",
-        "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj",
+        "projectPath": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Domain.Tests\\SnakeForTwo.Game.Domain.Tests.csproj",
         "packagesPath": "C:\\Users\\Mark\\.nuget\\packages\\",
-        "outputPath": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Domain.Tests\\obj\\",
+        "outputPath": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Domain.Tests\\obj\\",
         "projectStyle": "PackageReference",
         "fallbackFolders": [
           "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -371,8 +371,8 @@
           "net10.0": {
             "targetAlias": "net10.0",
             "projectReferences": {
-              "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj": {
-                "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj"
+              "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj": {
+                "projectPath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj"
               }
             }
           }

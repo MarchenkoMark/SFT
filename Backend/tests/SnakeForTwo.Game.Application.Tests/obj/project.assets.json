@@ -972,11 +972,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Application.Tests\\SnakeForTwo.Game.Application.Tests.csproj",
+      "projectUniqueName": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Application.Tests\\SnakeForTwo.Game.Application.Tests.csproj",
       "projectName": "SnakeForTwo.Game.Application.Tests",
-      "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Application.Tests\\SnakeForTwo.Game.Application.Tests.csproj",
+      "projectPath": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Application.Tests\\SnakeForTwo.Game.Application.Tests.csproj",
       "packagesPath": "C:\\Users\\Mark\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\Mark\\Documents\\SFT\\tests\\SnakeForTwo.Game.Application.Tests\\obj\\",
+      "outputPath": "C:\\Repos\\SFT\\Backend\\tests\\SnakeForTwo.Game.Application.Tests\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
@@ -997,14 +997,14 @@
         "net10.0": {
           "targetAlias": "net10.0",
           "projectReferences": {
-            "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Contracts\\SnakeForTwo.Contracts.csproj": {
-              "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Contracts\\SnakeForTwo.Contracts.csproj"
+            "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Contracts\\SnakeForTwo.Contracts.csproj": {
+              "projectPath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Contracts\\SnakeForTwo.Contracts.csproj"
             },
-            "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Application\\SnakeForTwo.Game.Application.csproj": {
-              "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Application\\SnakeForTwo.Game.Application.csproj"
+            "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Application\\SnakeForTwo.Game.Application.csproj": {
+              "projectPath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Application\\SnakeForTwo.Game.Application.csproj"
             },
-            "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj": {
-              "projectPath": "C:\\Users\\Mark\\Documents\\SFT\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj"
+            "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj": {
+              "projectPath": "C:\\Repos\\SFT\\Backend\\src\\SnakeForTwo.Game.Domain\\SnakeForTwo.Game.Domain.csproj"
             }
           }
         }

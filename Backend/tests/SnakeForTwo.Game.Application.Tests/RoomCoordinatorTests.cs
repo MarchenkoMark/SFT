@@ -115,6 +115,41 @@ public sealed class RoomCoordinatorTests
     }
 
     [Fact]
+    public void Game_start_broadcasts_initial_authoritative_frame_with_snakes_and_food()
+    {
+        var coordinator = CreateCoordinator(options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
+        var created = GetCreated(coordinator.CreateRoom("connection-1"));
+        coordinator.JoinRoom("connection-2", created.RoomId);
+        coordinator.SetReady("connection-1", created.RoomId, isReady: true);
+        coordinator.SetReady("connection-2", created.RoomId, isReady: true);
+
+        var result = coordinator.ProcessTimers();
+
+        var frame = Assert.IsType<AuthoritativeFrameMessage>(
+            result.Messages.Select(message => message.Message).OfType<AuthoritativeFrameMessage>().Single());
+        Assert.Equal(created.RoomId, frame.RoomId);
+        Assert.Equal("match-1", frame.MatchId);
+        Assert.Equal(0, frame.Tick);
+        Assert.Equal("Running", frame.State.Status);
+        Assert.Equal(32, frame.State.Board.Width);
+        Assert.Equal(24, frame.State.Board.Height);
+        Assert.Equal(2, frame.State.Snakes.Count);
+        Assert.Equal(2, frame.State.Food.Count);
+        Assert.Contains(frame.State.Snakes, snake =>
+            snake.PlayerId == "player-1" &&
+            snake.Alive &&
+            snake.Body.Count > 0 &&
+            snake.Head == snake.Body[0]);
+        Assert.Contains(frame.State.Snakes, snake =>
+            snake.PlayerId == "player-2" &&
+            snake.Alive &&
+            snake.Body.Count > 0 &&
+            snake.Head == snake.Body[0]);
+        Assert.All(frame.State.Food, food =>
+            Assert.Contains(frame.State.Snakes, snake => snake.PlayerId == food.OwnerPlayerId));
+    }
+
+    [Fact]
     public void Finish_game_broadcasts_game_finished_and_returns_room_to_postgame()
     {
         var coordinator = CreateCoordinator(options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
@@ -137,6 +172,69 @@ public sealed class RoomCoordinatorTests
             .Single();
         Assert.Equal(RoomStatusDto.PostGame, state.Room.Status);
         Assert.All(state.Room.Players, player => Assert.False(player.IsReady));
+    }
+
+    [Fact]
+    public void Input_inside_grace_window_applies_to_current_tick()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var coordinator = CreateCoordinator(
+            clock: clock,
+            options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
+        var created = StartGame(coordinator);
+
+        coordinator.SubmitInput(
+            "connection-1",
+            new ClientInputMessage(created.RoomId, DirectionDto.Up, ClientTime: 50),
+            serverReceivedAt: 50);
+
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        var result = coordinator.ProcessTimers();
+
+        var frame = result.Messages
+            .Select(message => message.Message)
+            .OfType<AuthoritativeFrameMessage>()
+            .Single(message => message.Tick == 1);
+        var localSnake = frame.State.Snakes.Single(snake => snake.PlayerId == created.PlayerId);
+        Assert.Equal(DirectionDto.Up, localSnake.Direction);
+        Assert.Equal(new CellDto(8, 9), localSnake.Head);
+    }
+
+    [Fact]
+    public void Input_after_grace_window_applies_to_next_tick()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var coordinator = CreateCoordinator(
+            clock: clock,
+            options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
+        var created = StartGame(coordinator);
+
+        coordinator.SubmitInput(
+            "connection-1",
+            new ClientInputMessage(created.RoomId, DirectionDto.Up, ClientTime: 150),
+            serverReceivedAt: 150);
+
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        var firstTick = coordinator.ProcessTimers();
+
+        var frameOne = firstTick.Messages
+            .Select(message => message.Message)
+            .OfType<AuthoritativeFrameMessage>()
+            .Single(message => message.Tick == 1);
+        var firstLocalSnake = frameOne.State.Snakes.Single(snake => snake.PlayerId == created.PlayerId);
+        Assert.Equal(DirectionDto.Right, firstLocalSnake.Direction);
+        Assert.Equal(new CellDto(9, 8), firstLocalSnake.Head);
+
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        var secondTick = coordinator.ProcessTimers();
+
+        var frameTwo = secondTick.Messages
+            .Select(message => message.Message)
+            .OfType<AuthoritativeFrameMessage>()
+            .Single(message => message.Tick == 2);
+        var secondLocalSnake = frameTwo.State.Snakes.Single(snake => snake.PlayerId == created.PlayerId);
+        Assert.Equal(DirectionDto.Up, secondLocalSnake.Direction);
+        Assert.Equal(new CellDto(9, 9), secondLocalSnake.Head);
     }
 
     [Fact]
@@ -207,6 +305,16 @@ public sealed class RoomCoordinatorTests
 
     private static RoomCreatedMessage GetCreated(RoomCommandResult result) =>
         Assert.IsType<RoomCreatedMessage>(Assert.Single(result.Messages).Message);
+
+    private static RoomCreatedMessage StartGame(GameRoomCoordinator coordinator)
+    {
+        var created = GetCreated(coordinator.CreateRoom("connection-1"));
+        coordinator.JoinRoom("connection-2", created.RoomId);
+        coordinator.SetReady("connection-1", created.RoomId, isReady: true);
+        coordinator.SetReady("connection-2", created.RoomId, isReady: true);
+        coordinator.ProcessTimers();
+        return created;
+    }
 
     private sealed class DeterministicIdentityProvider : IRoomIdentityProvider
     {

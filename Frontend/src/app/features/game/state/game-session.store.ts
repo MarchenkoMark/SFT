@@ -23,6 +23,9 @@ export interface StoredAuthoritativeFrame {
   serverTime: number;
   stateHash: string;
   state: AuthoritativeGameState;
+  source: AuthoritativeFrameMessage['type'] | CorrectionMessage['type'] | 'finalState';
+  revision: number;
+  receivedAt: number;
 }
 
 export interface GameSessionState {
@@ -91,7 +94,7 @@ export class GameSessionStore extends Store<GameSessionState> {
   }
 
   acceptFrame(message: AuthoritativeFrameMessage | CorrectionMessage): void {
-    this.update({
+    this.update((state) => ({
       phase: 'running',
       roomId: message.roomId,
       matchId: message.matchId,
@@ -100,8 +103,11 @@ export class GameSessionStore extends Store<GameSessionState> {
         serverTime: message.serverTime,
         stateHash: message.stateHash,
         state: message.state,
+        source: message.type,
+        revision: (state.latestFrame?.revision ?? 0) + 1,
+        receivedAt: Date.now(),
       },
-    });
+    }));
   }
 
   finished(message: GameFinishedMessage): void {
@@ -115,6 +121,9 @@ export class GameSessionStore extends Store<GameSessionState> {
             serverTime: Date.now(),
             stateHash: state.latestFrame?.stateHash ?? 'final',
             state: message.finalState,
+            source: 'finalState',
+            revision: (state.latestFrame?.revision ?? 0) + 1,
+            receivedAt: Date.now(),
           }
         : state.latestFrame,
       result: { result: message.result, reason: message.reason },

@@ -1,4 +1,5 @@
 using SnakeForTwo.Contracts;
+using SnakeForTwo.Game.Domain;
 
 namespace SnakeForTwo.Game.Application;
 
@@ -51,9 +52,8 @@ public sealed record RoomCommandResult(
         Array.Empty<ConnectionClosure>());
 
     public static RoomCommandResult ToConnection(string connectionId, ServerMessage message) =>
-        new(
-            new[] { new OutboundServerMessage(new[] { connectionId }, message) },
-            Array.Empty<ConnectionClosure>());
+        new([new OutboundServerMessage([connectionId], message)],
+            []);
 
     public static RoomCommandResult Error(
         string connectionId,
@@ -63,26 +63,18 @@ public sealed record RoomCommandResult(
         ToConnection(connectionId, new ErrorMessage(code, message, roomId));
 }
 
-public sealed class GameRoomCoordinator : IRoomCoordinator
+public sealed class GameRoomCoordinator(
+    GameRuntimeOptions options,
+    IRoomIdentityProvider identityProvider,
+    TimeProvider? timeProvider = null)
+    : IRoomCoordinator
 {
     private const int MaxPlayersPerRoom = 2;
 
-    private readonly object _syncRoot = new();
+    private readonly Lock _syncRoot = new();
     private readonly Dictionary<string, RoomRecord> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlayerLocation> _connections = new(StringComparer.Ordinal);
-    private readonly GameRuntimeOptions _options;
-    private readonly IRoomIdentityProvider _identityProvider;
-    private readonly TimeProvider _timeProvider;
-
-    public GameRoomCoordinator(
-        GameRuntimeOptions options,
-        IRoomIdentityProvider identityProvider,
-        TimeProvider? timeProvider = null)
-    {
-        _options = options;
-        _identityProvider = identityProvider;
-        _timeProvider = timeProvider ?? TimeProvider.System;
-    }
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
 
     public RoomCommandResult CreateRoom(string connectionId)
     {
@@ -222,7 +214,7 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                 Broadcast(room, new RoomStateMessage(state))
             };
 
-            if (room.Status == RoomStatusDto.InGame && room.Match is not null)
+            if (room is { Status: RoomStatusDto.InGame, Match: not null })
             {
                 messages.Add(Direct(
                     connectionId,
@@ -234,6 +226,12 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                         room.Match.StartServerTime.ToUnixTimeMilliseconds(),
                         room.Match.Seed,
                         ToTimingSettings())));
+                if (room.Match.Session is not null)
+                {
+                    messages.Add(Direct(
+                        connectionId,
+                        ToAuthoritativeFrameMessage(room, CreateFrame(room.Match.Session))));
+                }
             }
 
             return Result(messages, closures);
@@ -287,12 +285,9 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
                 player.IsReady = true;
 
-                if (room.Players.All(candidate => candidate.IsConnected && candidate.IsReady))
-                {
-                    return BeginStartLocked(room);
-                }
-
-                return Result(new[] { Broadcast(room, new RoomStateMessage(ToRoomState(room))) });
+                return room.Players.All(candidate => candidate is { IsConnected: true, IsReady: true }) ?
+                    BeginStartLocked(room) :
+                    Result([Broadcast(room, new RoomStateMessage(ToRoomState(room)))]);
             }
 
             player.IsReady = false;
@@ -302,7 +297,7 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                 room.Match = null;
             }
 
-            return Result(new[] { Broadcast(room, new RoomStateMessage(ToRoomState(room))) });
+            return Result([Broadcast(room, new RoomStateMessage(ToRoomState(room)))]);
         }
     }
 
@@ -312,18 +307,36 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
         lock (_syncRoot)
         {
-            if (!TryGetAttachedPlayer(connectionId, input.RoomId, out var room, out _, out var error))
+            if (!TryGetAttachedPlayer(connectionId, input.RoomId, out var room, out var player, out var error))
             {
                 return error;
             }
 
-            return room.Status == RoomStatusDto.InGame
-                ? RoomCommandResult.Empty
-                : RoomCommandResult.Error(
+            if (room is not { Status: RoomStatusDto.InGame, Match.Session: not null })
+            {
+                return RoomCommandResult.Error(
                     connectionId,
                     "gameNotRunning",
                     "Inputs are only accepted while a game is running.",
                     room.Id);
+            }
+
+            var targetTick = EstimateInputTargetTick(room.Match, input, serverReceivedAt);
+            var inputResult = room.Match.Session.SubmitInput(
+                new PlayerId(player.PlayerId),
+                targetTick,
+                ToDomainDirection(input.Direction));
+
+            var messages = inputResult.Corrections
+                .Select(frame => Broadcast(room, ToCorrectionMessage(room, frame)))
+                .ToList();
+
+            if (room.Match.Session.CurrentState.Status == GameStatus.Finished)
+            {
+                FinishGameLocked(room, "teamLost", room.Match.Session.CurrentState.GameOverReason.ToString(), messages);
+            }
+
+            return Result(messages);
         }
     }
 
@@ -395,7 +408,7 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                 room.Match = null;
             }
 
-            return Result(new[] { Broadcast(room, new RoomStateMessage(ToRoomState(room))) });
+            return Result([Broadcast(room, new RoomStateMessage(ToRoomState(room)))]);
         }
     }
 
@@ -403,12 +416,7 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
     {
         lock (_syncRoot)
         {
-            if (!TryGetRoom(roomId, out var room))
-            {
-                return RoomCommandResult.Empty;
-            }
-
-            if (room.Status is not (RoomStatusDto.Starting or RoomStatusDto.InGame))
+            if (!TryGetRoom(roomId, out var room) || room.Status is not (RoomStatusDto.Starting or RoomStatusDto.InGame))
             {
                 return RoomCommandResult.Empty;
             }
@@ -428,10 +436,10 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
             foreach (var room in _rooms.Values.ToArray())
             {
-                if (room.Status == RoomStatusDto.Starting &&
-                    room.Match is not null &&
+                if (room is { Status: RoomStatusDto.Starting, Match: not null } &&
                     room.Match.StartServerTime <= now)
                 {
+                    room.Match.Session = CreateGameSession(room, room.Match);
                     room.Status = RoomStatusDto.InGame;
                     messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
 
@@ -448,11 +456,32 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                                 room.Match.Seed,
                                 ToTimingSettings())));
                     }
+
+                    messages.Add(Broadcast(room, ToAuthoritativeFrameMessage(room, CreateFrame(room.Match.Session))));
+                }
+
+                if (room is { Status: RoomStatusDto.InGame, Match.Session: not null })
+                {
+                    while (NextFrameServerTime(room.Match) <= now &&
+                        room.Match.Session.CurrentState.Status == GameStatus.Running)
+                    {
+                        var frame = room.Match.Session.AdvanceOneTick();
+                        messages.Add(Broadcast(room, ToAuthoritativeFrameMessage(room, frame)));
+                    }
+
+                    if (room.Match.Session.CurrentState.Status == GameStatus.Finished)
+                    {
+                        FinishGameLocked(
+                            room,
+                            "teamLost",
+                            room.Match.Session.CurrentState.GameOverReason.ToString(),
+                            messages);
+                    }
                 }
 
                 if (room.Status == RoomStatusDto.InGame &&
                     room.Players.Any(player => player.DisconnectedAt is not null &&
-                        player.DisconnectedAt.Value + TimeSpan.FromSeconds(_options.DisconnectGracePeriodSeconds) <= now))
+                        player.DisconnectedAt.Value + TimeSpan.FromSeconds(options.DisconnectGracePeriodSeconds) <= now))
                 {
                     FinishGameLocked(room, "forfeit", "disconnectTimeout", messages);
                 }
@@ -464,11 +493,11 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
     private RoomCommandResult BeginStartLocked(RoomRecord room)
     {
-        var startServerTime = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(_options.StartCountdownSeconds);
+        var startServerTime = _timeProvider.GetUtcNow() + TimeSpan.FromSeconds(options.StartCountdownSeconds);
         room.Status = RoomStatusDto.Starting;
         room.Match = new MatchRecord(
-            _identityProvider.CreateMatchId(),
-            _identityProvider.CreateSeed(),
+            identityProvider.CreateMatchId(),
+            identityProvider.CreateSeed(),
             startServerTime);
 
         var state = ToRoomState(room);
@@ -481,7 +510,7 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                     room.Id,
                     room.Match.MatchId,
                     startServerTime.ToUnixTimeMilliseconds(),
-                    (int)Math.Round(_options.TicksPerSecond),
+                    (int)Math.Round(options.TicksPerSecond),
                     room.Match.Seed,
                     ToTimingSettings()))
         };
@@ -509,22 +538,175 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
         messages.Add(Broadcast(
             room,
-            new GameFinishedMessage(room.Id, match.MatchId, result, reason, FinalState: null)));
+            new GameFinishedMessage(
+                room.Id,
+                match.MatchId,
+                result,
+                reason,
+                match.Session is null ? null : ToAuthoritativeGameStateDto(match.Session.CurrentState))));
         messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
     }
 
+    private RollbackGameSession CreateGameSession(RoomRecord room, MatchRecord match)
+    {
+        var rules = new GameRules(
+            BoardWidth: options.BoardWidth,
+            BoardHeight: options.BoardHeight,
+            TilesPerSecond: options.TilesPerSecond,
+            RollbackWindowTicks: Math.Max(1, (int)Math.Ceiling(options.RollbackHistorySeconds * options.TicksPerSecond)),
+            WallWrapping: true,
+            FoodSeed: match.Seed,
+            InputFutureBufferTicks: options.InputFutureBufferTicks);
+        var initialState = SnakeGameEngine.CreateInitialState(
+            rules,
+            room.Players
+                .OrderBy(player => player.Seat)
+                .Select(player => CreateSnakeSpawn(player, rules)));
+
+        return new RollbackGameSession(initialState);
+    }
+
+    private static SnakeSpawn CreateSnakeSpawn(PlayerRecord player, GameRules rules)
+    {
+        var length = Math.Min(4, Math.Max(2, rules.BoardWidth / 8));
+
+        if (player.Seat % 2 == 1)
+        {
+            var y = Math.Max(1, rules.BoardHeight / 3);
+            var headX = Math.Max(length, rules.BoardWidth / 4);
+            return new SnakeSpawn(
+                new PlayerId(player.PlayerId),
+                new SnakeColor(ColorForSeat(player.Seat)),
+                Direction.Right,
+                Enumerable.Range(0, length).Select(offset => new Cell(headX - offset, y)));
+        }
+
+        var evenY = Math.Min(rules.BoardHeight - 2, (rules.BoardHeight * 2) / 3);
+        var rightHeadX = Math.Min(rules.BoardWidth - length - 1, (rules.BoardWidth * 3) / 4);
+        return new SnakeSpawn(
+            new PlayerId(player.PlayerId),
+            new SnakeColor(ColorForSeat(player.Seat)),
+            Direction.Left,
+            Enumerable.Range(0, length).Select(offset => new Cell(rightHeadX + offset, evenY)));
+    }
+
+    private static string ColorForSeat(int seat) =>
+        seat switch
+        {
+            1 => "blue",
+            2 => "orange",
+            3 => "green",
+            4 => "red",
+            _ => $"seat-{seat}"
+        };
+
+    private GameTick EstimateInputTargetTick(
+        MatchRecord match,
+        ClientInputMessage input,
+        long serverReceivedAt)
+    {
+        var inputServerTime = input.ClientTime > 0
+            ? input.ClientTime
+            : serverReceivedAt;
+        var tickDurationMs = Math.Max(1, options.TickDuration.TotalMilliseconds);
+        var elapsedMs = Math.Max(0, inputServerTime - match.StartServerTime.ToUnixTimeMilliseconds());
+        var inputTick = (long)Math.Floor(elapsedMs / tickDurationMs);
+        var elapsedIntoTickMs = elapsedMs - (inputTick * tickDurationMs);
+
+        return new GameTick(
+            elapsedIntoTickMs <= options.InputGrace.TotalMilliseconds
+                ? inputTick
+                : inputTick + 1);
+    }
+
+    private DateTimeOffset NextFrameServerTime(MatchRecord match) =>
+        match.StartServerTime + (options.TickDuration * ((match.Session?.CurrentTick.Value ?? 0) + 1));
+
+    private AuthoritativeFrameMessage ToAuthoritativeFrameMessage(RoomRecord room, GameFrame frame)
+    {
+        var match = room.Match ?? throw new InvalidOperationException("A frame requires an active match.");
+        return new AuthoritativeFrameMessage(
+            room.Id,
+            match.MatchId,
+            frame.Tick.Value,
+            FrameServerTime(match, frame.Tick),
+            frame.StateHash,
+            ToAuthoritativeGameStateDto(frame.State));
+    }
+
+    private CorrectionMessage ToCorrectionMessage(RoomRecord room, GameFrame frame)
+    {
+        var match = room.Match ?? throw new InvalidOperationException("A correction requires an active match.");
+        return new CorrectionMessage(
+            room.Id,
+            match.MatchId,
+            frame.Tick.Value,
+            FrameServerTime(match, frame.Tick),
+            frame.StateHash,
+            ToAuthoritativeGameStateDto(frame.State));
+    }
+
+    private long FrameServerTime(MatchRecord match, GameTick tick) =>
+        (match.StartServerTime + (options.TickDuration * tick.Value)).ToUnixTimeMilliseconds();
+
+    private static GameFrame CreateFrame(RollbackGameSession session) =>
+        new(
+            session.CurrentTick,
+            session.CurrentState.Copy(),
+            SnakeGameEngine.ComputeStateHash(session.CurrentState));
+
+    private static AuthoritativeGameStateDto ToAuthoritativeGameStateDto(GameState state) =>
+        new(
+            new BoardDto(state.Rules.BoardWidth, state.Rules.BoardHeight),
+            state.Snakes.Select(ToAuthoritativeSnakeDto).ToArray(),
+            state.Food.Select(food => new FoodItemDto(
+                food.OwnerPlayerId.Value,
+                new CellDto(food.Cell.X, food.Cell.Y))).ToArray(),
+            state.Status.ToString());
+
+    private static AuthoritativeSnakeDto ToAuthoritativeSnakeDto(Snake snake)
+    {
+        var head = snake.Body.Count > 0 ? snake.Head : new Cell(0, 0);
+        return new AuthoritativeSnakeDto(
+            snake.PlayerId.Value,
+            snake.Alive,
+            new CellDto(head.X, head.Y),
+            ToDirectionDto(snake.Direction),
+            snake.Body.Select(cell => new CellDto(cell.X, cell.Y)).ToArray());
+    }
+
+    private static Direction ToDomainDirection(DirectionDto direction) =>
+        direction switch
+        {
+            DirectionDto.Up => Direction.Up,
+            DirectionDto.Right => Direction.Right,
+            DirectionDto.Down => Direction.Down,
+            DirectionDto.Left => Direction.Left,
+            _ => Direction.Right
+        };
+
+    private static DirectionDto ToDirectionDto(Direction direction) =>
+        direction switch
+        {
+            Direction.Up => DirectionDto.Up,
+            Direction.Right => DirectionDto.Right,
+            Direction.Down => DirectionDto.Down,
+            Direction.Left => DirectionDto.Left,
+            _ => DirectionDto.Right
+        };
+
     private PlayerRecord CreatePlayer(int seat, string connectionId) =>
         new(
-            _identityProvider.CreatePlayerId(),
+            identityProvider.CreatePlayerId(),
             seat,
-            _identityProvider.CreatePlayerSessionToken(),
+            identityProvider.CreatePlayerSessionToken(),
             connectionId);
 
     private string CreateUniqueRoomId()
     {
         for (var attempt = 0; attempt < 10; attempt++)
         {
-            var roomId = NormalizeRoomId(_identityProvider.CreateRoomId());
+            var roomId = NormalizeRoomId(identityProvider.CreateRoomId());
             if (!_rooms.ContainsKey(roomId))
             {
                 return roomId;
@@ -638,15 +820,15 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
     private TimingSettingsDto ToTimingSettings() =>
         new(
-            _options.TilesPerSecond,
-            _options.AnimationFramesPerTile,
-            (int)Math.Round(_options.TickDuration.TotalMilliseconds),
-            (int)Math.Round(_options.AnimationFrameDuration.TotalMilliseconds),
-            _options.InputFutureBufferTicks,
-            _options.DisconnectGracePeriodSeconds);
+            options.TilesPerSecond,
+            options.AnimationFramesPerTile,
+            (int)Math.Round(options.TickDuration.TotalMilliseconds),
+            (int)Math.Round(options.AnimationFrameDuration.TotalMilliseconds),
+            options.InputFutureBufferTicks,
+            options.DisconnectGracePeriodSeconds);
 
     private static OutboundServerMessage Direct(string connectionId, ServerMessage message) =>
-        new(new[] { connectionId }, message);
+        new([connectionId], message);
 
     private static OutboundServerMessage Broadcast(RoomRecord room, ServerMessage message) =>
         new(
@@ -669,43 +851,28 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
 
     private sealed record PlayerLocation(string RoomId, string PlayerId);
 
-    private sealed class RoomRecord
+    private sealed class RoomRecord(string id, RoomStatusDto status)
     {
-        public RoomRecord(string id, RoomStatusDto status)
-        {
-            Id = id;
-            Status = status;
-        }
+        public string Id { get; } = id;
 
-        public string Id { get; }
-
-        public RoomStatusDto Status { get; set; }
+        public RoomStatusDto Status { get; set; } = status;
 
         public List<PlayerRecord> Players { get; } = [];
 
         public MatchRecord? Match { get; set; }
     }
 
-    private sealed class PlayerRecord
+    private sealed class PlayerRecord(string playerId, int seat, string sessionToken, string connectionId)
     {
-        public PlayerRecord(string playerId, int seat, string sessionToken, string connectionId)
-        {
-            PlayerId = playerId;
-            Seat = seat;
-            SessionToken = sessionToken;
-            ConnectionId = connectionId;
-            IsConnected = true;
-        }
+        public string PlayerId { get; } = playerId;
 
-        public string PlayerId { get; }
+        public int Seat { get; } = seat;
 
-        public int Seat { get; }
+        public string SessionToken { get; } = sessionToken;
 
-        public string SessionToken { get; }
+        public string? ConnectionId { get; set; } = connectionId;
 
-        public string? ConnectionId { get; set; }
-
-        public bool IsConnected { get; set; }
+        public bool IsConnected { get; set; } = true;
 
         public bool IsReady { get; set; }
 
@@ -715,5 +882,8 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
     private sealed record MatchRecord(
         string MatchId,
         int Seed,
-        DateTimeOffset StartServerTime);
+        DateTimeOffset StartServerTime)
+    {
+        public RollbackGameSession? Session { get; set; }
+    }
 }

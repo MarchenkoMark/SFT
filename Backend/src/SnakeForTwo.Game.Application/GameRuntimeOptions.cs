@@ -16,10 +16,20 @@ public sealed class GameRuntimeOptions
 
     public int StartCountdownSeconds { get; init; } = 3;
 
+    public int BoardWidth { get; init; } = 32;
+
+    public int BoardHeight { get; init; } = 24;
+
+    public int InputGraceMs { get; init; } = 0;
+
     public double TicksPerSecond => Math.Max(TilesPerSecond, 0.001);
 
     public TimeSpan TickDuration => TimeSpan.FromSeconds(1 / TicksPerSecond);
 
     public TimeSpan AnimationFrameDuration => TimeSpan.FromSeconds(
         1 / (TicksPerSecond * Math.Max(AnimationFramesPerTile, 1)));
+
+    public TimeSpan InputGrace => TimeSpan.FromMilliseconds(InputGraceMs > 0
+        ? InputGraceMs
+        : AnimationFrameDuration.TotalMilliseconds);
 }

@@ -8,6 +8,7 @@ import { RealtimeGatewayService } from './realtime-gateway.service';
 import { RoomSessionStorageService } from './room-session-storage.service';
 import { ConnectionStore } from '../state/connection.store';
 import { GameSessionStore } from '../../features/game/state/game-session.store';
+import { LocalPredictionStore } from '../../features/game/state/local-prediction.store';
 import { RoomStore } from '../../features/room/room.store';
 import { RoomStatus, ServerMessage } from './protocol.models';
 
@@ -23,6 +24,7 @@ export class ServerMessageDispatcherService {
     private readonly roomSessionStorage: RoomSessionStorageService,
     private readonly roomStore: RoomStore,
     private readonly gameSessionStore: GameSessionStore,
+    private readonly localPredictionStore: LocalPredictionStore,
   ) {}
 
   start(): void {
@@ -42,6 +44,7 @@ export class ServerMessageDispatcherService {
         applyTransaction(() => {
           this.roomStore.acceptAssignment(message, this.createInviteUrl(message.roomId));
           this.gameSessionStore.resetSession();
+          this.localPredictionStore.reset();
         });
         void this.router.navigate(['/room', message.roomId]);
         return;
@@ -62,15 +65,18 @@ export class ServerMessageDispatcherService {
         return;
 
       case 'gameStarted':
+        this.localPredictionStore.reset();
         this.gameSessionStore.started(message);
         return;
 
       case 'authoritativeFrame':
       case 'correction':
         this.gameSessionStore.acceptFrame(message);
+        this.localPredictionStore.removeCoveredInputs(message.tick);
         return;
 
       case 'gameFinished':
+        this.localPredictionStore.reset();
         this.gameSessionStore.finished(message);
         return;
 

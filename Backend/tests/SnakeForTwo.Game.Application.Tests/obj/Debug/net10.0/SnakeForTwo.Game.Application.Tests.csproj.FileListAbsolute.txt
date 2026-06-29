@@ -206,3 +206,4 @@ C:\Repos\SFT\Backend\tests\SnakeForTwo.Game.Application.Tests\obj\Debug\net10.0\
 C:\Repos\SFT\Backend\tests\SnakeForTwo.Game.Application.Tests\obj\Debug\net10.0\SnakeForTwo.Game.Application.Tests.pdb
 C:\Repos\SFT\Backend\tests\SnakeForTwo.Game.Application.Tests\obj\Debug\net10.0\SnakeForTwo.Game.Application.Tests.genruntimeconfig.cache
 C:\Repos\SFT\Backend\tests\SnakeForTwo.Game.Application.Tests\obj\Debug\net10.0\ref\SnakeForTwo.Game.Application.Tests.dll
+C:\Repos\SFT\Backend\tests\SnakeForTwo.Game.Application.Tests\obj\Debug\net10.0\SnakeForTwo.Game.Application.Tests.sourcelink.json

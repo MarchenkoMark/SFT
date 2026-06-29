@@ -163,6 +163,7 @@ public sealed class RoomCoordinatorTests
             .Single();
         Assert.Equal(RoomStatusDto.InGame, disconnectedState.Room.Status);
         Assert.False(disconnectedState.Room.Players.Single(player => player.PlayerId == created.PlayerId).IsConnected);
+        Assert.True(disconnectedState.Room.Players.Single(player => player.PlayerId == created.PlayerId).IsReady);
 
         clock.Advance(TimeSpan.FromSeconds(9));
         Assert.DoesNotContain(coordinator.ProcessTimers().Messages, message => message.Message is GameFinishedMessage);
@@ -172,6 +173,13 @@ public sealed class RoomCoordinatorTests
             resumed.Messages.Select(message => message.Message).OfType<RoomResumedMessage>().Single());
         Assert.Equal(RoomStatusDto.InGame, resumedMessage.Room.Status);
         Assert.True(resumedMessage.Room.Players.Single(player => player.PlayerId == created.PlayerId).IsConnected);
+        Assert.True(resumedMessage.Room.Players.Single(player => player.PlayerId == created.PlayerId).IsReady);
+
+        var resumedGame = Assert.IsType<GameStartedMessage>(
+            resumed.Messages.Select(message => message.Message).OfType<GameStartedMessage>().Single());
+        Assert.Equal(created.RoomId, resumedGame.RoomId);
+        Assert.Equal(created.PlayerId, resumedGame.PlayerId);
+        Assert.Equal("match-1", resumedGame.MatchId);
 
         coordinator.MarkDisconnected("connection-1b");
         clock.Advance(TimeSpan.FromSeconds(10));

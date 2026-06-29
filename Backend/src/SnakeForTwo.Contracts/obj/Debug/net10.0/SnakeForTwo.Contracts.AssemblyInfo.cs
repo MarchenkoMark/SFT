@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("SnakeForTwo.Contracts")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+a4c9dee0a4972aa47f88545a1ab9e4d4fcf25a01")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+00ab1f280fe1e8b09e4b2389fd1c6ae47b78a883")]
 [assembly: System.Reflection.AssemblyProductAttribute("SnakeForTwo.Contracts")]
 [assembly: System.Reflection.AssemblyTitleAttribute("SnakeForTwo.Contracts")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

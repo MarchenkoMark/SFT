@@ -55,6 +55,23 @@ describe('RoomStore', () => {
     expect(store.getValue().pendingReady).toBe(false);
     expect(store.getValue().lastError?.code).toBe('roomWaitingForPlayers');
   });
+
+  it('clears room errors without changing the current room', () => {
+    const store = new RoomStore();
+    const room = createRoomState();
+    store.setRoom(room);
+    store.setRoomError({
+      type: 'error',
+      code: 'roomNotFound',
+      message: 'Room does not exist.',
+      roomId: 'BAD',
+    });
+
+    store.clearRoomError();
+
+    expect(store.getValue().room).toEqual(room);
+    expect(store.getValue().lastError).toBeNull();
+  });
 });
 
 function createRoomState(): RoomState {

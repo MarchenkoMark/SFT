@@ -55,6 +55,10 @@ export class RoomStore extends Store<RoomUiState> {
     this.update({ pendingReady: false, lastError: error });
   }
 
+  clearRoomError(): void {
+    this.update({ lastError: null });
+  }
+
   clear(): void {
     this.update(initialState);
   }

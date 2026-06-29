@@ -9,7 +9,7 @@ import { RoomSessionStorageService } from './room-session-storage.service';
 import { ConnectionStore } from '../state/connection.store';
 import { GameSessionStore } from '../../features/game/state/game-session.store';
 import { RoomStore } from '../../features/room/room.store';
-import { ServerMessage } from './protocol.models';
+import { RoomStatus, ServerMessage } from './protocol.models';
 
 @Injectable({ providedIn: 'root' })
 export class ServerMessageDispatcherService {
@@ -47,7 +47,12 @@ export class ServerMessageDispatcherService {
         return;
 
       case 'roomState':
-        this.roomStore.setRoom(message.room);
+        applyTransaction(() => {
+          this.roomStore.setRoom(message.room);
+          if (this.shouldResetCountdown(message.room.status)) {
+            this.gameSessionStore.resetSession();
+          }
+        });
         return;
 
       case 'gameStarting':
@@ -70,7 +75,6 @@ export class ServerMessageDispatcherService {
         return;
 
       case 'error':
-        this.connectionStore.failed(message.message);
         this.roomStore.setRoomError(message);
         if (message.code === 'invalidPlayerSessionToken' && message.roomId) {
           this.roomSessionStorage.clearToken(message.roomId);
@@ -86,5 +90,12 @@ export class ServerMessageDispatcherService {
   private createInviteUrl(roomId: string): string {
     const tree = this.router.createUrlTree(['/join'], { queryParams: { id: roomId } });
     return `${window.location.origin}${this.router.serializeUrl(tree)}`;
+  }
+
+  private shouldResetCountdown(status: RoomStatus): boolean {
+    return (
+      this.gameSessionStore.getValue().phase === 'countdown' &&
+      (status === 'ReadyCheck' || status === 'WaitingForPlayers')
+    );
   }
 }

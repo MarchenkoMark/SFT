@@ -46,6 +46,10 @@ export class ConnectionStore extends Store<ConnectionState> {
     this.update({ status: 'error', lastError: error });
   }
 
+  clearError(): void {
+    this.update({ lastError: null });
+  }
+
   recordDiagnostic(message: string): void {
     this.update((state) => ({
       diagnostics: [message, ...state.diagnostics].slice(0, 20),

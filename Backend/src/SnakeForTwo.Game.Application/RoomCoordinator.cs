@@ -222,6 +222,20 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
                 Broadcast(room, new RoomStateMessage(state))
             };
 
+            if (room.Status == RoomStatusDto.InGame && room.Match is not null)
+            {
+                messages.Add(Direct(
+                    connectionId,
+                    new GameStartedMessage(
+                        room.Id,
+                        room.Match.MatchId,
+                        player.PlayerId,
+                        player.Seat,
+                        room.Match.StartServerTime.ToUnixTimeMilliseconds(),
+                        room.Match.Seed,
+                        ToTimingSettings())));
+            }
+
             return Result(messages, closures);
         }
     }
@@ -369,7 +383,11 @@ public sealed class GameRoomCoordinator : IRoomCoordinator
             player.ConnectionId = null;
             player.IsConnected = false;
             player.DisconnectedAt = _timeProvider.GetUtcNow();
-            player.IsReady = false;
+
+            if (room.Status != RoomStatusDto.InGame)
+            {
+                player.IsReady = false;
+            }
 
             if (room.Status == RoomStatusDto.Starting)
             {

@@ -22,6 +22,7 @@ import { LobbyFacade } from './lobby.facade';
           <p class="muted">Connection: {{ vm.connectionStatus }}</p>
           @if (vm.lastError) {
             <p class="error" role="alert">{{ vm.lastError }}</p>
+            <button type="button" (click)="facade.goHome()">Home</button>
           }
         }
       </section>
@@ -52,6 +53,13 @@ import { LobbyFacade } from './lobby.facade';
 
     .error {
       color: #9b1c1c;
+    }
+
+    button {
+      min-height: 40px;
+      width: fit-content;
+      font: inherit;
+      padding: 0 14px;
     }
   `,
   changeDetection: ChangeDetectionStrategy.OnPush,

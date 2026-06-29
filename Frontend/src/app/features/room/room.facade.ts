@@ -6,6 +6,7 @@ import { ClockSyncService } from '../../core/clock/clock-sync.service';
 import { RealtimeGatewayService } from '../../core/realtime/realtime-gateway.service';
 import { RoomSessionStorageService } from '../../core/realtime/room-session-storage.service';
 import { ConnectionQuery } from '../../core/state/connection.query';
+import { ConnectionStore } from '../../core/state/connection.store';
 import { GameSessionQuery } from '../game/state/game-session.query';
 import { GameSessionStore } from '../game/state/game-session.store';
 import { RoomQuery } from './room.query';
@@ -18,6 +19,7 @@ export class RoomFacade {
   constructor(
     private readonly clockSync: ClockSyncService,
     private readonly connectionQuery: ConnectionQuery,
+    private readonly connectionStore: ConnectionStore,
     private readonly gateway: RealtimeGatewayService,
     private readonly gameSessionQuery: GameSessionQuery,
     private readonly gameSessionStore: GameSessionStore,
@@ -42,7 +44,9 @@ export class RoomFacade {
           !!room &&
           !waitingForPlayers &&
           !roomState.pendingReady &&
-          (room.status === 'ReadyCheck' || room.status === 'PostGame');
+          (room.status === 'ReadyCheck' ||
+            room.status === 'PostGame' ||
+            (room.status === 'Starting' && localPlayer?.isReady === true));
         const countdownSeconds =
           game.phase === 'countdown' && game.startServerTime
             ? Math.max(
@@ -128,6 +132,7 @@ export class RoomFacade {
 
     this.roomStore.clear();
     this.gameSessionStore.resetSession();
+    this.connectionStore.clearError();
     void this.router.navigate(['/']);
   }
 }

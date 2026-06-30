@@ -1,0 +1,77 @@
+name: Deploy backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "Backend/**"
+      - "deploy/Caddyfile"
+      - "compose.prod.yml"
+      - ".github/workflows/deploy-backend.yml"
+
+concurrency:
+  group: production-backend
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test backend
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.101"
+
+      - name: Test backend
+        working-directory: Backend
+        run: dotnet test --configuration Release
+
+  deploy:
+    name: Deploy backend to production
+    runs-on: ubuntu-latest
+    needs: test
+    environment: production
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.PROD_SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.PROD_SSH_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+
+      - name: Sync backend deployment files
+        run: |
+          rsync -az \
+            --exclude '.git/' \
+            --exclude 'bin/' \
+            --exclude 'obj/' \
+            --exclude 'node_modules/' \
+            -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.PROD_SSH_PORT }}" \
+            compose.prod.yml Backend/ deploy/ \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/"
+
+      - name: Validate production compose config
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' && docker compose --env-file .env -f compose.prod.yml config"
+
+      - name: Rebuild and restart production stack
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' && docker compose --env-file .env -f compose.prod.yml up --build -d"
+
+      - name: Verify production health endpoint
+        run: curl --fail --show-error --silent https://api.snakefortwo.com/health

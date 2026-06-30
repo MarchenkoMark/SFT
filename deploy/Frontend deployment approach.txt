@@ -1,0 +1,419 @@
+# Snake For Two frontend deployment approach
+
+The frontend is deployed as an **Angular single-page application** on **Cloudflare Pages**, using Git integration from the GitHub monorepo.
+
+The main goal of the setup is:
+
+```text
+Player browser
+        -> HTTPS
+snakefortwo.com
+        -> Cloudflare Pages
+Angular frontend
+        -> WSS
+api.snakefortwo.com/ws
+        -> DigitalOcean backend through Caddy
+```
+
+The frontend is static after build. Cloudflare Pages serves the compiled Angular files, while live game traffic goes to the already deployed backend over secure WebSockets.
+
+---
+
+## 1. Infrastructure choice
+
+The frontend runs on:
+
+* **Cloudflare Pages**
+* Git-based deployments from GitHub
+* Cloudflare's global edge network
+* A production custom domain:
+
+```text
+snakefortwo.com
+```
+
+This is a good fit for the current frontend because the Angular app is compiled into static files and does not need a Node.js server at runtime.
+
+The Cloudflare Workers flow was deliberately not used. If the setup screen shows a deploy command like:
+
+```text
+npx wrangler deploy
+```
+
+that is the Worker setup path, not the Pages setup path.
+
+---
+
+## 2. Domain layout
+
+The public domain layout is:
+
+```text
+snakefortwo.com       -> Angular frontend on Cloudflare Pages
+api.snakefortwo.com   -> ASP.NET Core backend on DigitalOcean
+```
+
+The Cloudflare Pages preview domain is:
+
+```text
+snakefortwo.pages.dev
+```
+
+The production frontend should normally be shared as:
+
+```text
+https://snakefortwo.com
+```
+
+The backend remains on:
+
+```text
+https://api.snakefortwo.com
+wss://api.snakefortwo.com/ws
+```
+
+The frontend does not need to know the DigitalOcean Droplet IP directly.
+
+---
+
+## 3. Cloudflare Pages project
+
+The Cloudflare Pages project is connected to:
+
+```text
+GitHub repository: MarchenkoMark/SFT
+Production branch: main
+Pages project: snakefortwo
+Preview URL: https://snakefortwo.pages.dev
+```
+
+Cloudflare builds automatically when changes are pushed to the production branch.
+
+The build is configured as a monorepo app because the Angular project lives under:
+
+```text
+Frontend/
+```
+
+---
+
+## 4. Build settings
+
+The Cloudflare Pages build settings are:
+
+```text
+Framework preset: Angular
+Root directory: Frontend
+Build command: npm ci && npm run build
+Build output directory: dist/snake-for-two-frontend/browser
+```
+
+The build command runs from the `Frontend` directory because the Pages root directory is set to `Frontend`.
+
+The local equivalent is:
+
+```powershell
+cd Frontend
+npm ci
+npm run build
+```
+
+The Angular production build writes browser assets to:
+
+```text
+Frontend/dist/snake-for-two-frontend/browser
+```
+
+That folder is the one Cloudflare Pages serves.
+
+---
+
+## 5. Angular build output
+
+The Angular project is configured in:
+
+```text
+Frontend/angular.json
+```
+
+The production build uses Angular's default production configuration:
+
+* optimized output;
+* hashed bundles;
+* static assets copied from `Frontend/public`;
+* output under `Frontend/dist/snake-for-two-frontend/browser`.
+
+The relevant npm script is:
+
+```json
+"build": "ng build"
+```
+
+Cloudflare installs dependencies with `npm ci`, so `Frontend/package-lock.json` should be kept committed and up to date.
+
+---
+
+## 6. SPA routing
+
+The Angular app uses client-side routes such as:
+
+```text
+/
+/join?id=ROOMCODE
+/room/ROOMCODE
+```
+
+Cloudflare Pages needs a fallback rule so direct page refreshes and shared room links resolve to Angular's `index.html`.
+
+That is handled by:
+
+```text
+Frontend/public/_redirects
+```
+
+with:
+
+```text
+/* /index.html 200
+```
+
+Because `public` is part of the Angular asset configuration, this file is copied into the Cloudflare build output.
+
+Without this rule, loading a deep link such as:
+
+```text
+https://snakefortwo.com/room/ABC123
+```
+
+could return a 404 from Cloudflare instead of booting the Angular router.
+
+---
+
+## 7. Frontend runtime backend URL
+
+The frontend connects to the backend WebSocket through:
+
+```text
+wss://api.snakefortwo.com/ws
+```
+
+The production URL is stored in:
+
+```text
+Frontend/src/app/app.settings.ts
+```
+
+as:
+
+```ts
+export const appSettings = {
+  productionWsUrl: 'wss://api.snakefortwo.com/ws',
+} as const;
+```
+
+The resolver is in:
+
+```text
+Frontend/src/app/core/realtime/realtime-url.ts
+```
+
+The current behavior is:
+
+* `localStorage.sft.wsUrl` overrides everything for manual testing;
+* `localhost`, `127.0.0.1`, and `::1` use `ws://localhost:5012/ws`;
+* private LAN hosts such as `192.168.x.x`, `10.x.x.x`, and `172.16-31.x.x` use the same host on port `5012`;
+* all other hosts use `wss://api.snakefortwo.com/ws`.
+
+This lets local development keep working while production and preview deployments use the public backend.
+
+---
+
+## 8. Backend CORS and WebSockets
+
+The backend has configurable CORS support in:
+
+```text
+Backend/src/SnakeForTwo.Api/Program.cs
+```
+
+The production Compose file passes these frontend origins:
+
+```yaml
+Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-https://snakefortwo.com}
+Cors__AllowedOrigins__1: ${FRONTEND_WWW_ORIGIN:-https://www.snakefortwo.com}
+```
+
+That is mainly for future normal HTTP API calls from the browser.
+
+The current game traffic is WebSocket-based:
+
+```text
+wss://api.snakefortwo.com/ws
+```
+
+The live Pages preview was verified by creating a room from the browser. The page reached:
+
+```text
+Connection: open
+```
+
+which confirms:
+
+```text
+Cloudflare Pages frontend
+        -> browser WebSocket
+api.snakefortwo.com
+        -> Caddy
+ASP.NET Core backend
+```
+
+---
+
+## 9. Custom domain DNS
+
+The custom domain added to Cloudflare Pages is:
+
+```text
+snakefortwo.com
+```
+
+Cloudflare created a root-domain DNS record equivalent to:
+
+```text
+Type: CNAME
+Name: @
+Content: snakefortwo.pages.dev
+TTL: Auto
+```
+
+Cloudflare can serve an apex/root domain through CNAME flattening, so this is expected.
+
+This DNS record is only for the frontend root domain. It should not replace or alter:
+
+```text
+api.snakefortwo.com -> 134.209.20.89
+```
+
+After activation, DNS and browser caches may take several minutes to settle. During that window:
+
+```text
+https://snakefortwo.pages.dev
+```
+
+may work before:
+
+```text
+https://snakefortwo.com
+```
+
+does.
+
+---
+
+## 10. Deployment process
+
+For a normal frontend release:
+
+1. Make changes under `Frontend/`.
+2. Verify locally:
+
+```powershell
+cd Frontend
+npm.cmd run build
+npm.cmd test -- --watch=false
+```
+
+3. Commit the changes.
+4. Push to `main`.
+5. Cloudflare Pages automatically builds and deploys the new version.
+
+No manual `rsync`, Docker build, or server restart is required for frontend-only changes.
+
+---
+
+## 11. Deployment verification
+
+Useful verification URLs:
+
+```text
+https://snakefortwo.pages.dev
+https://snakefortwo.com
+https://api.snakefortwo.com/health
+```
+
+Frontend smoke test:
+
+1. Open `https://snakefortwo.com`.
+2. Click **Create room**.
+3. Confirm the room page shows:
+
+```text
+Connection: open
+```
+
+4. Copy the invite URL.
+5. Open it in another browser or private window.
+6. Confirm the second player can join.
+7. Refresh a `/room/...` URL and confirm it still loads instead of 404ing.
+
+The Pages preview was successfully smoke-tested at:
+
+```text
+https://snakefortwo.pages.dev
+```
+
+by creating a room and reaching an open WebSocket connection.
+
+---
+
+## 12. Troubleshooting
+
+If `snakefortwo.pages.dev` works but `snakefortwo.com` does not:
+
+* check that the custom domain status in Cloudflare Pages is **Active**;
+* wait several minutes for DNS and certificate propagation;
+* retry in a private/incognito window;
+* confirm the root DNS record points to `snakefortwo.pages.dev`;
+* confirm `api.snakefortwo.com` still points to the backend server.
+
+If direct room links 404:
+
+* confirm `Frontend/public/_redirects` exists;
+* confirm the deployed output includes `_redirects`;
+* confirm the rule is:
+
+```text
+/* /index.html 200
+```
+
+If the frontend loads but cannot connect to the game:
+
+* check the browser connection status on the page;
+* confirm the bundle points to `wss://api.snakefortwo.com/ws`;
+* test `https://api.snakefortwo.com/health`;
+* check Caddy and backend logs on the VPS;
+* check whether the backend deployment includes the latest CORS/origin configuration if HTTP API calls have been added.
+
+---
+
+## 13. Current state versus remaining production work
+
+Completed:
+
+* Cloudflare Pages project created from GitHub;
+* `main` configured as the production branch;
+* Angular build configured for the `Frontend` monorepo folder;
+* Pages preview deployed at `https://snakefortwo.pages.dev`;
+* production WebSocket URL set to `wss://api.snakefortwo.com/ws`;
+* SPA fallback added through `_redirects`;
+* custom domain `snakefortwo.com` added and activated in Cloudflare Pages;
+* Pages preview smoke-tested with a real room creation and open WebSocket connection.
+
+Still worth doing:
+
+* verify `https://snakefortwo.com` after DNS/browser cache propagation;
+* test a complete two-player game from the custom domain;
+* consider adding `www.snakefortwo.com` as a custom domain or redirect;
+* consider hiding or disabling the network-delay panel for public players;
+* add monitoring/analytics for frontend errors and backend WebSocket failures;
+* later, move hardcoded public runtime URLs into an environment/config pattern if staging environments are introduced.

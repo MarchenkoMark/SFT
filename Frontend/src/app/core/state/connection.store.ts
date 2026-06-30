@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Store, StoreConfig } from '@datorama/akita';
 
-export type ConnectionStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
+export type ConnectionStatus = 'idle' | 'connecting' | 'reconnecting' | 'open' | 'closed' | 'error';
 
 export interface ConnectionState {
   status: ConnectionStatus;
@@ -32,6 +32,10 @@ export class ConnectionStore extends Store<ConnectionState> {
 
   connecting(url: string): void {
     this.update({ status: 'connecting', url, lastError: null });
+  }
+
+  reconnecting(url: string): void {
+    this.update({ status: 'reconnecting', url });
   }
 
   opened(): void {

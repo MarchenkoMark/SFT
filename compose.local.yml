@@ -1,0 +1,10 @@
+services:
+  backend:
+    ports:
+      - "8080:8080"
+
+  caddy:
+    profiles:
+      - caddy
+    environment:
+      BACKEND_DOMAIN: "http://:80"

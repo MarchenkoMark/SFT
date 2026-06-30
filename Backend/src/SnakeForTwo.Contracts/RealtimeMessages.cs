@@ -42,11 +42,58 @@ public abstract record ServerMessage
     public abstract string Type { get; }
 }
 
+public abstract record ClientMessage
+{
+    public abstract string Type { get; }
+}
+
+public sealed record CreateRoomClientMessage : ClientMessage
+{
+    public override string Type => "createRoom";
+}
+
+public sealed record JoinRoomClientMessage(string RoomId) : ClientMessage
+{
+    public override string Type => "joinRoom";
+}
+
+public sealed record ResumeRoomClientMessage(
+    string RoomId,
+    string PlayerSessionToken) : ClientMessage
+{
+    public override string Type => "resumeRoom";
+}
+
+public sealed record ReadyClientMessage(string RoomId) : ClientMessage
+{
+    public override string Type => "ready";
+}
+
+public sealed record UnreadyClientMessage(string RoomId) : ClientMessage
+{
+    public override string Type => "unready";
+}
+
+public sealed record LeaveRoomClientMessage(string RoomId) : ClientMessage
+{
+    public override string Type => "leaveRoom";
+}
+
 public sealed record ClientInputMessage(
     string RoomId,
     DirectionDto Direction,
     long ClientTime,
-    int? ClientSequence = null);
+    int? ClientSequence = null) : ClientMessage
+{
+    public override string Type => "input";
+}
+
+public sealed record PingClientMessage(
+    long ClientTime,
+    string SampleId) : ClientMessage
+{
+    public override string Type => "ping";
+}
 
 public sealed record RoomCreatedMessage(
     string RoomId,

@@ -1,0 +1,48 @@
+services:
+  backend:
+    build:
+      context: ./Backend
+      dockerfile: Dockerfile
+    image: snake-for-two-backend:prod
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_ENVIRONMENT: Production
+      ASPNETCORE_URLS: http://+:8080
+      Game__TilesPerSecond: "2"
+      Game__AnimationFramesPerTile: "5"
+      Game__RollbackHistorySeconds: "5"
+      Game__InputFutureBufferTicks: "4"
+      Game__DisconnectGracePeriodSeconds: "10"
+      Game__DisconnectedPlayerRetentionSeconds: "300"
+      Game__StartCountdownSeconds: "3"
+      Cors__AllowedOrigins__0: ${FRONTEND_ORIGIN:-https://snakefortwo.com}
+      Cors__AllowedOrigins__1: ${FRONTEND_WWW_ORIGIN:-https://www.snakefortwo.com}
+    expose:
+      - "8080"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      BACKEND_DOMAIN: ${BACKEND_DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

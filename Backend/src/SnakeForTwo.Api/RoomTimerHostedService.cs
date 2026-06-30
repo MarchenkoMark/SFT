@@ -37,7 +37,7 @@ internal sealed class RoomTimerHostedService : BackgroundService
         }
         catch (Exception exception)
         {
-            _logger.LogError(exception, "Room timer stopped unexpectedly.");
+            _logger.LogError(exception, "Unhandled game loop error.");
             throw;
         }
     }

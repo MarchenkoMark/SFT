@@ -128,8 +128,10 @@ export class RoomFacade {
     const roomId = this.roomQuery.snapshot.room?.roomId;
     if (roomId) {
       this.gateway.send({ type: 'leaveRoom', roomId });
+      this.roomSessionStorage.clearToken(roomId);
     }
 
+    this.gateway.clearResumeSession();
     this.roomStore.clear();
     this.gameSessionStore.resetSession();
     this.connectionStore.clearError();

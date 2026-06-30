@@ -22,9 +22,9 @@ class MockWebSocket extends EventTarget {
     this.sent.push(message);
   }
 
-  close(): void {
+  close(code = 1000, reason = ''): void {
     this.readyState = MockWebSocket.CLOSED;
-    this.dispatchEvent(new Event('close'));
+    this.dispatchEvent(new CloseEvent('close', { code, reason }));
   }
 
   open(): void {
@@ -52,6 +52,7 @@ describe('RealtimeGatewayService', () => {
 
     connectionStore = {
       connecting: vi.fn(),
+      reconnecting: vi.fn(),
       opened: vi.fn(),
       closed: vi.fn(),
       failed: vi.fn(),
@@ -118,5 +119,43 @@ describe('RealtimeGatewayService', () => {
         sampleId: 'sample-1',
       },
     ]);
+  });
+
+  it('reconnects and resumes the room after an unexpected socket close', () => {
+    gateway.setResumeSession('ROOM1', 'token-1');
+    gateway.connect();
+    const firstSocket = MockWebSocket.instances[0];
+    firstSocket.open();
+    firstSocket.sent.length = 0;
+
+    firstSocket.close(1001, 'Network changed.');
+
+    expect(connectionStore.reconnecting).toHaveBeenCalledWith('ws://localhost:5012/ws');
+    expect(MockWebSocket.instances).toHaveLength(1);
+
+    vi.advanceTimersByTime(500);
+
+    expect(MockWebSocket.instances).toHaveLength(2);
+    const secondSocket = MockWebSocket.instances[1];
+    secondSocket.open();
+
+    expect(JSON.parse(secondSocket.sent[0]) as unknown).toEqual({
+      type: 'resumeRoom',
+      roomId: 'ROOM1',
+      playerSessionToken: 'token-1',
+    });
+  });
+
+  it('does not reconnect when the seat was intentionally resumed by a newer connection', () => {
+    gateway.setResumeSession('ROOM1', 'token-1');
+    gateway.connect();
+    const socket = MockWebSocket.instances[0];
+    socket.open();
+
+    socket.close(1008, 'Seat was resumed by a newer connection.');
+    vi.advanceTimersByTime(10_000);
+
+    expect(MockWebSocket.instances).toHaveLength(1);
+    expect(connectionStore.reconnecting).not.toHaveBeenCalled();
   });
 });

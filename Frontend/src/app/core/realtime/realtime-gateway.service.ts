@@ -8,6 +8,11 @@ import { decodeServerMessage } from './protocol-codecs';
 import { ClientMessage, ServerMessage } from './protocol.models';
 import { resolveRealtimeUrl } from './realtime-url';
 
+type ResumeRoomMessage = Extract<ClientMessage, { type: 'resumeRoom' }>;
+
+const reconnectDelaysMs = [500, 1_000, 2_000, 5_000, 10_000] as const;
+const seatResumedByNewerConnectionReason = 'Seat was resumed by a newer connection.';
+
 @Injectable({ providedIn: 'root' })
 export class RealtimeGatewayService implements OnDestroy {
   private socket: WebSocket | null = null;
@@ -15,8 +20,12 @@ export class RealtimeGatewayService implements OnDestroy {
   private readonly outboundQueue: ClientMessage[] = [];
   private readonly delayedTrafficTimers = new Set<number>();
   private pingTimerId: number | null = null;
+  private reconnectTimerId: number | null = null;
+  private reconnectAttempt = 0;
   private nextOutboundReleaseAt = 0;
   private nextInboundReleaseAt = 0;
+  private resumeMessage: ResumeRoomMessage | null = null;
+  private intentionalDisconnect = false;
 
   readonly messages$ = this.messagesSubject.asObservable();
 
@@ -34,14 +43,29 @@ export class RealtimeGatewayService implements OnDestroy {
       return;
     }
 
+    this.cancelReconnect();
+    this.intentionalDisconnect = false;
     const url = resolveRealtimeUrl();
     this.connectionStore.connecting(url);
 
     this.socket = new WebSocket(url);
     this.socket.addEventListener('open', () => this.handleOpen());
     this.socket.addEventListener('message', (event) => this.handleMessage(event));
-    this.socket.addEventListener('close', () => this.handleClose());
+    this.socket.addEventListener('close', (event) => this.handleClose(event));
     this.socket.addEventListener('error', () => this.handleError());
+  }
+
+  setResumeSession(roomId: string, playerSessionToken: string): void {
+    this.resumeMessage = {
+      type: 'resumeRoom',
+      roomId,
+      playerSessionToken,
+    };
+  }
+
+  clearResumeSession(): void {
+    this.resumeMessage = null;
+    this.cancelReconnect();
   }
 
   send(message: ClientMessage): void {
@@ -55,9 +79,12 @@ export class RealtimeGatewayService implements OnDestroy {
   }
 
   disconnect(): void {
+    this.intentionalDisconnect = true;
+    this.cancelReconnect();
     this.stopPingLoop();
     this.clearDelayedTraffic();
     this.outboundQueue.length = 0;
+    this.resumeMessage = null;
     this.socket?.close();
     this.socket = null;
     this.connectionStore.closed();
@@ -69,7 +96,12 @@ export class RealtimeGatewayService implements OnDestroy {
   }
 
   private handleOpen(): void {
+    this.reconnectAttempt = 0;
     this.connectionStore.opened();
+    if (this.resumeMessage && this.socket?.readyState === WebSocket.OPEN) {
+      this.sendWithDelay(this.resumeMessage, this.socket);
+    }
+
     this.flushQueue();
     this.startPingLoop();
   }
@@ -107,11 +139,15 @@ export class RealtimeGatewayService implements OnDestroy {
     this.connectionStore.failed(decoded.reason);
   }
 
-  private handleClose(): void {
+  private handleClose(event: CloseEvent): void {
     this.stopPingLoop();
     this.clearDelayedTraffic();
     this.socket = null;
     this.connectionStore.closed();
+
+    if (this.shouldReconnect(event)) {
+      this.scheduleReconnect();
+    }
   }
 
   private handleError(): void {
@@ -184,6 +220,38 @@ export class RealtimeGatewayService implements OnDestroy {
     this.delayedTrafficTimers.clear();
     this.nextOutboundReleaseAt = 0;
     this.nextInboundReleaseAt = 0;
+  }
+
+  private shouldReconnect(event: CloseEvent): boolean {
+    if (this.intentionalDisconnect || !this.resumeMessage) {
+      return false;
+    }
+
+    return !(
+      event.code === 1008 &&
+      event.reason.includes(seatResumedByNewerConnectionReason)
+    );
+  }
+
+  private scheduleReconnect(): void {
+    if (this.reconnectTimerId !== null) {
+      return;
+    }
+
+    const delayMs = reconnectDelaysMs[Math.min(this.reconnectAttempt, reconnectDelaysMs.length - 1)];
+    this.reconnectAttempt++;
+    this.connectionStore.reconnecting(resolveRealtimeUrl());
+    this.reconnectTimerId = window.setTimeout(() => {
+      this.reconnectTimerId = null;
+      this.connect();
+    }, delayMs);
+  }
+
+  private cancelReconnect(): void {
+    if (this.reconnectTimerId !== null) {
+      window.clearTimeout(this.reconnectTimerId);
+      this.reconnectTimerId = null;
+    }
   }
 
   private startPingLoop(): void {

@@ -39,16 +39,39 @@ internal sealed class WebSocketEndpoint
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var connection = _connections.Register(socket);
+        _logger.LogInformation(
+            "Player connected: connection {ConnectionId}.",
+            connection.ConnectionId);
         var sendLoop = connection.SendLoopAsync(context.RequestAborted);
 
         try
         {
             await ReceiveLoopAsync(connection, context.RequestAborted);
         }
+        catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
+        {
+        }
+        catch (WebSocketException exception)
+        {
+            _logger.LogWarning(
+                exception,
+                "Unhandled WebSocket error for connection {ConnectionId}.",
+                connection.ConnectionId);
+        }
+        catch (Exception exception)
+        {
+            _logger.LogError(
+                exception,
+                "Unhandled WebSocket error for connection {ConnectionId}.",
+                connection.ConnectionId);
+        }
         finally
         {
             var disconnectResult = _roomCoordinator.MarkDisconnected(connection.ConnectionId);
             await _connections.DispatchAsync(disconnectResult, CancellationToken.None);
+            _logger.LogInformation(
+                "Player disconnected: connection {ConnectionId}.",
+                connection.ConnectionId);
 
             if (socket.State == WebSocketState.CloseReceived)
             {
@@ -73,6 +96,13 @@ internal sealed class WebSocketEndpoint
             }
             catch (OperationCanceledException)
             {
+            }
+            catch (WebSocketException exception)
+            {
+                _logger.LogWarning(
+                    exception,
+                    "Unhandled WebSocket error for connection {ConnectionId}.",
+                    connection.ConnectionId);
             }
         }
     }
@@ -111,8 +141,12 @@ internal sealed class WebSocketEndpoint
             {
                 return;
             }
-            catch (WebSocketException)
+            catch (WebSocketException exception)
             {
+                _logger.LogWarning(
+                    exception,
+                    "Unhandled WebSocket error for connection {ConnectionId}.",
+                    connection.ConnectionId);
                 return;
             }
 

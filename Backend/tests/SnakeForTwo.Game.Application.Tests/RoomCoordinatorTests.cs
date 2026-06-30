@@ -312,6 +312,68 @@ public sealed class RoomCoordinatorTests
         Assert.Equal(RoomStatusDto.PostGame, postGame.Room.Status);
     }
 
+    [Fact]
+    public void Disconnected_lobby_player_is_removed_after_retention_and_empty_room_is_closed()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var coordinator = CreateCoordinator(
+            clock: clock,
+            options: new GameRuntimeOptions
+            {
+                DisconnectGracePeriodSeconds = 1,
+                DisconnectedPlayerRetentionSeconds = 5
+            });
+        var created = GetCreated(coordinator.CreateRoom("connection-1"));
+
+        coordinator.MarkDisconnected("connection-1");
+        clock.Advance(TimeSpan.FromSeconds(4));
+        coordinator.ProcessTimers();
+
+        var beforeExpiry = coordinator.JoinRoom("connection-2", created.RoomId);
+        Assert.IsType<RoomJoinedMessage>(
+            beforeExpiry.Messages.Select(message => message.Message).OfType<RoomJoinedMessage>().Single());
+
+        coordinator.LeaveRoom("connection-2", created.RoomId);
+        clock.Advance(TimeSpan.FromSeconds(1));
+        coordinator.ProcessTimers();
+
+        var afterExpiry = coordinator.JoinRoom("connection-3", created.RoomId);
+        var error = Assert.IsType<ErrorMessage>(Assert.Single(afterExpiry.Messages).Message);
+        Assert.Equal("roomNotFound", error.Code);
+    }
+
+    [Fact]
+    public void Expired_disconnected_player_is_removed_from_room_with_connected_player()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var coordinator = CreateCoordinator(
+            clock: clock,
+            options: new GameRuntimeOptions
+            {
+                DisconnectGracePeriodSeconds = 1,
+                DisconnectedPlayerRetentionSeconds = 5
+            });
+        var created = GetCreated(coordinator.CreateRoom("connection-1"));
+        coordinator.JoinRoom("connection-2", created.RoomId);
+
+        coordinator.MarkDisconnected("connection-2");
+        clock.Advance(TimeSpan.FromSeconds(5));
+        var result = coordinator.ProcessTimers();
+
+        var state = result.Messages
+            .Select(message => message.Message)
+            .OfType<RoomStateMessage>()
+            .Single();
+        Assert.Equal(RoomStatusDto.WaitingForPlayers, state.Room.Status);
+        Assert.Single(state.Room.Players);
+        Assert.Equal(created.PlayerId, state.Room.Players[0].PlayerId);
+
+        var joined = coordinator.JoinRoom("connection-3", created.RoomId);
+        var joinedMessage = Assert.IsType<RoomJoinedMessage>(
+            joined.Messages.Select(message => message.Message).OfType<RoomJoinedMessage>().Single());
+        Assert.Equal(2, joinedMessage.Room.Players.Single(player => player.PlayerId == "player-3").Seat);
+    }
+
     private static GameRoomCoordinator CreateCoordinator(
         ManualTimeProvider? clock = null,
         GameRuntimeOptions? options = null) =>

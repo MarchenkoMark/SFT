@@ -41,6 +41,7 @@ export class ServerMessageDispatcherService {
       case 'roomJoined':
       case 'roomResumed':
         this.roomSessionStorage.saveToken(message.roomId, message.playerSessionToken);
+        this.gateway.setResumeSession(message.roomId, message.playerSessionToken);
         applyTransaction(() => {
           this.roomStore.acceptAssignment(message, this.createInviteUrl(message.roomId));
           this.gameSessionStore.resetSession();
@@ -88,6 +89,7 @@ export class ServerMessageDispatcherService {
         this.roomStore.setRoomError(message);
         if (message.code === 'invalidPlayerSessionToken' && message.roomId) {
           this.roomSessionStorage.clearToken(message.roomId);
+          this.gateway.clearResumeSession();
         }
         return;
 

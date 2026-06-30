@@ -66,7 +66,8 @@ public sealed record RoomCommandResult(
 public sealed class GameRoomCoordinator(
     GameRuntimeOptions options,
     IRoomIdentityProvider identityProvider,
-    TimeProvider? timeProvider = null)
+    TimeProvider? timeProvider = null,
+    IRoomLifecycleLogger? lifecycleLogger = null)
     : IRoomCoordinator
 {
     private const int MaxPlayersPerRoom = 2;
@@ -75,6 +76,8 @@ public sealed class GameRoomCoordinator(
     private readonly Dictionary<string, RoomRecord> _rooms = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, PlayerLocation> _connections = new(StringComparer.Ordinal);
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
+    private readonly IRoomLifecycleLogger _lifecycleLogger =
+        lifecycleLogger ?? NullRoomLifecycleLogger.Instance;
 
     public RoomCommandResult CreateRoom(string connectionId)
     {
@@ -97,6 +100,7 @@ public sealed class GameRoomCoordinator(
 
             _rooms.Add(room.Id, room);
             _connections[connectionId] = new PlayerLocation(room.Id, player.PlayerId);
+            _lifecycleLogger.RoomCreated(room.Id, player.PlayerId, connectionId);
 
             var state = ToRoomState(room);
             return RoomCommandResult.ToConnection(
@@ -155,6 +159,7 @@ public sealed class GameRoomCoordinator(
                 : RoomStatusDto.WaitingForPlayers;
 
             _connections[connectionId] = new PlayerLocation(room.Id, player.PlayerId);
+            _lifecycleLogger.RoomJoined(room.Id, player.PlayerId, connectionId);
 
             var state = ToRoomState(room);
             var messages = new List<OutboundServerMessage>
@@ -376,6 +381,7 @@ public sealed class GameRoomCoordinator(
                 FinishGameLocked(room, "forfeit", "playerLeft", messages);
             }
 
+            _lifecycleLogger.RoomLeft(room.Id, player.PlayerId, player.ConnectionId, "explicitLeave");
             RemovePlayerLocked(room, player);
             if (room.Players.Count == 0)
             {
@@ -415,6 +421,7 @@ public sealed class GameRoomCoordinator(
             player.ConnectionId = null;
             player.IsConnected = false;
             player.DisconnectedAt = _timeProvider.GetUtcNow();
+            _lifecycleLogger.PlayerDisconnected(room.Id, player.PlayerId, connectionId);
 
             if (room.Status != RoomStatusDto.InGame)
             {
@@ -460,6 +467,7 @@ public sealed class GameRoomCoordinator(
                 {
                     room.Match.Session = CreateGameSession(room, room.Match);
                     room.Status = RoomStatusDto.InGame;
+                    _lifecycleLogger.GameStarted(room.Id, room.Match.MatchId);
                     messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
 
                     foreach (var player in room.Players.Where(candidate => candidate.ConnectionId is not null))
@@ -504,6 +512,8 @@ public sealed class GameRoomCoordinator(
                 {
                     FinishGameLocked(room, "forfeit", "disconnectTimeout", messages);
                 }
+
+                RemoveExpiredDisconnectedPlayersLocked(room, now, messages);
             }
 
             return Result(messages);
@@ -549,10 +559,16 @@ public sealed class GameRoomCoordinator(
             return;
         }
 
+        var wasGameActive = room.Status == RoomStatusDto.InGame || match.Session is not null;
         room.Status = RoomStatusDto.PostGame;
         foreach (var player in room.Players)
         {
             player.IsReady = false;
+        }
+
+        if (wasGameActive)
+        {
+            _lifecycleLogger.GameEnded(room.Id, match.MatchId, result, reason);
         }
 
         messages.Add(Broadcast(
@@ -587,6 +603,42 @@ public sealed class GameRoomCoordinator(
                 .Select(player => CreateSnakeSpawn(player, rules)));
 
         return new RollbackGameSession(initialState);
+    }
+
+    private void RemoveExpiredDisconnectedPlayersLocked(
+        RoomRecord room,
+        DateTimeOffset now,
+        List<OutboundServerMessage> messages)
+    {
+        if (room.Status is RoomStatusDto.Starting or RoomStatusDto.InGame)
+        {
+            return;
+        }
+
+        var expiredPlayers = room.Players
+            .Where(player => player.DisconnectedAt is not null &&
+                player.DisconnectedAt.Value + options.DisconnectedPlayerRetention <= now)
+            .ToArray();
+
+        if (expiredPlayers.Length == 0)
+        {
+            return;
+        }
+
+        foreach (var player in expiredPlayers)
+        {
+            _lifecycleLogger.RoomLeft(room.Id, player.PlayerId, player.ConnectionId, "disconnectCleanup");
+            RemovePlayerLocked(room, player);
+        }
+
+        if (room.Players.Count == 0)
+        {
+            _rooms.Remove(room.Id);
+            return;
+        }
+
+        NormalizeRoomStatusAfterRosterChange(room);
+        messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
     }
 
     private static SnakeSpawn CreateSnakeSpawn(PlayerRecord player, GameRules rules)

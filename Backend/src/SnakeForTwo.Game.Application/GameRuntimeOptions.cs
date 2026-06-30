@@ -14,6 +14,8 @@ public sealed class GameRuntimeOptions
 
     public int DisconnectGracePeriodSeconds { get; init; } = 10;
 
+    public int DisconnectedPlayerRetentionSeconds { get; init; } = 300;
+
     public int StartCountdownSeconds { get; init; } = 3;
 
     public int BoardWidth { get; init; } = 32;
@@ -28,6 +30,9 @@ public sealed class GameRuntimeOptions
 
     public TimeSpan AnimationFrameDuration => TimeSpan.FromSeconds(
         1 / (TicksPerSecond * Math.Max(AnimationFramesPerTile, 1)));
+
+    public TimeSpan DisconnectedPlayerRetention => TimeSpan.FromSeconds(
+        Math.Max(DisconnectGracePeriodSeconds, DisconnectedPlayerRetentionSeconds));
 
     public TimeSpan InputGrace => TimeSpan.FromMilliseconds(InputGraceMs > 0
         ? InputGraceMs

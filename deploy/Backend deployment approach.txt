@@ -1,0 +1,538 @@
+# Snake For Two backend deployment approach
+
+The backend is deployed as a **containerised ASP.NET Core .NET 10 service** on a **DigitalOcean London Droplet**, with **Caddy** acting as the public HTTPS/WSS reverse proxy.
+
+The main goal of the setup is:
+
+```text
+Cloudflare Pages frontend
+        ↓ HTTPS / WSS
+api.snakefortwo.com
+        ↓
+DigitalOcean London VPS
+        ↓
+Caddy container
+        ↓ private Docker network
+ASP.NET Core backend container
+```
+
+The backend itself is not exposed directly to the internet. Only Caddy accepts public traffic.
+
+---
+
+## 1. Infrastructure choice
+
+The service runs on:
+
+* **DigitalOcean**
+* **London region**, to minimise latency for UK players
+* **Ubuntu 24.04 LTS**
+* **Basic shared CPU Droplet**
+* **2 GB RAM**
+* A dedicated production hostname:
+
+```text
+snakefortwo-prod-lon-1
+```
+
+The current backend is stateless, so a 2 GB Droplet is sufficient for the MVP. Future persistent services such as a database, Redis, matchmaking state, player accounts, or analytics should be added separately rather than stored only on the VPS filesystem.
+
+---
+
+## 2. Domain layout
+
+A single domain is used for the game:
+
+```text
+snakefortwo.com
+```
+
+The intended public layout is:
+
+```text
+snakefortwo.com       → Angular frontend hosted on Cloudflare Pages
+api.snakefortwo.com   → ASP.NET Core backend on DigitalOcean
+```
+
+The API subdomain currently has a Cloudflare DNS `A` record:
+
+```text
+api.snakefortwo.com → 134.209.20.89
+```
+
+At the moment, the API DNS record is set to **DNS only**, rather than proxied through Cloudflare. This keeps the first HTTPS deployment simpler and lets Caddy communicate directly with certificate authorities.
+
+The backend can serve both ordinary API traffic and WebSocket traffic through the same hostname:
+
+```text
+https://api.snakefortwo.com/health
+https://api.snakefortwo.com/api/...
+wss://api.snakefortwo.com/ws
+```
+
+A separate WebSocket subdomain is not needed because WebSockets begin as HTTP requests and are upgraded by the reverse proxy.
+
+---
+
+## 3. Server access and security setup
+
+SSH access was configured through an SSH key rather than password-only root access.
+
+A dedicated Linux user was created:
+
+```text
+deploy
+```
+
+This user:
+
+* owns the deployed application files;
+* has `sudo` access for server administration;
+* belongs to the `docker` group;
+* can run Docker and Docker Compose without prefixing commands with `sudo`.
+
+The relevant permissions model is:
+
+```text
+root    → initial server administration and emergency access
+deploy  → normal application deployment and Docker operations
+```
+
+The server was updated immediately after provisioning:
+
+```bash
+apt update && apt upgrade -y
+reboot
+```
+
+---
+
+## 4. Cloud firewall
+
+A DigitalOcean Cloud Firewall was attached to the Droplet.
+
+Only these inbound ports are open:
+
+| Port | Protocol | Purpose                                 |
+| ---: | -------- | --------------------------------------- |
+|   22 | TCP      | SSH administration                      |
+|   80 | TCP      | HTTP, redirects, certificate validation |
+|  443 | TCP      | HTTPS and secure WebSockets             |
+|  443 | UDP      | HTTP/3 support via Caddy                |
+
+The ASP.NET Core application port, `8080`, is **not publicly open**.
+
+This is important because direct access to port `8080` would bypass:
+
+* HTTPS;
+* Caddy’s reverse-proxy boundary;
+* any future rate limiting or security controls;
+* the intended public architecture.
+
+---
+
+## 5. Docker installation
+
+Docker Engine and the Docker Compose plugin were installed from Docker’s official Ubuntu repository.
+
+The deployment uses the modern Compose command:
+
+```bash
+docker compose
+```
+
+rather than the old standalone `docker-compose` command.
+
+The deployment user was added to the Docker group:
+
+```bash
+sudo usermod -aG docker deploy
+```
+
+After reconnecting, Docker could be used without `sudo`.
+
+---
+
+## 6. Production deployment folder
+
+The backend deployment lives on the server in:
+
+```text
+/opt/snakefortwo
+```
+
+The final folder structure is:
+
+```text
+/opt/snakefortwo/
+├── .env
+├── compose.prod.yml
+├── Backend/
+│   ├── Dockerfile
+│   ├── src/
+│   ├── tests/
+│   ├── Dockerfile
+│   ├── SnakeForTwo.sln
+│   ├── global.json
+│   └── other backend files
+└── deploy/
+    └── Caddyfile
+```
+
+The `.env` file remains on the server and stores deployment-specific configuration:
+
+```env
+BACKEND_DOMAIN=api.snakefortwo.com
+```
+
+This lets the same Compose and Caddy configuration be reused in different environments later, for example:
+
+```text
+api.staging.snakefortwo.com
+api.snakefortwo.com
+localhost
+```
+
+without hardcoding the hostname into the Caddyfile.
+
+---
+
+## 7. Backend container
+
+The ASP.NET Core service is built from the `Backend` directory.
+
+The runtime image is based on:
+
+```text
+mcr.microsoft.com/dotnet/aspnet:10.0
+```
+
+The container:
+
+* runs the published `.NET 10` application;
+* listens internally on port `8080`;
+* runs as a non-root application user;
+* has diagnostics disabled;
+* includes `curl` for health checks.
+
+The relevant runtime configuration is:
+
+```text
+ASPNETCORE_ENVIRONMENT=Production
+ASPNETCORE_URLS=http://+:8080
+DOTNET_EnableDiagnostics=0
+```
+
+The backend is exposed only inside Docker Compose’s internal network:
+
+```yaml
+expose:
+  - "8080"
+```
+
+It deliberately does **not** use:
+
+```yaml
+ports:
+  - "8080:8080"
+```
+
+That means this endpoint is not reachable publicly:
+
+```text
+http://134.209.20.89:8080
+```
+
+Only Caddy can reach the backend using Docker service discovery:
+
+```text
+backend:8080
+```
+
+---
+
+## 8. Health checks
+
+The backend provides:
+
+```text
+GET /health
+```
+
+The Docker container uses that route as its health check:
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD curl -fsS http://localhost:8080/health || exit 1
+```
+
+The Compose service also declares a health check:
+
+```yaml
+healthcheck:
+  test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+  interval: 30s
+  timeout: 5s
+  retries: 3
+  start_period: 20s
+```
+
+Caddy waits until the backend reports healthy before starting:
+
+```yaml
+depends_on:
+  backend:
+    condition: service_healthy
+```
+
+This prevents Caddy from beginning to proxy traffic before the game backend is ready.
+
+---
+
+## 9. Caddy reverse proxy and TLS
+
+Caddy runs in a separate Docker container.
+
+It is the only container that publishes public ports:
+
+```yaml
+ports:
+  - "80:80"
+  - "443:443"
+  - "443:443/udp"
+```
+
+Caddy is configured with:
+
+```caddy
+{$BACKEND_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy backend:8080
+}
+```
+
+With the production environment file, this becomes effectively:
+
+```caddy
+api.snakefortwo.com {
+    encode zstd gzip
+    reverse_proxy backend:8080
+}
+```
+
+Caddy performs several responsibilities:
+
+* accepts incoming HTTP and HTTPS traffic;
+* automatically obtains and renews TLS certificates;
+* redirects HTTP traffic to HTTPS;
+* forwards requests to the ASP.NET Core backend;
+* supports gzip and zstd response compression;
+* forwards WebSocket upgrade requests automatically;
+* supports HTTP/3 through UDP port `443`.
+
+The Caddy data and configuration directories are stored in persistent Docker volumes:
+
+```yaml
+volumes:
+  caddy_data:
+  caddy_config:
+```
+
+This is important because certificate and renewal data survive container recreation.
+
+---
+
+## 10. Deployment process
+
+The first deployment was manual over SSH.
+
+From the local WSL environment, backend deployment files were copied to the server using `rsync`.
+
+The intended pattern is:
+
+```bash
+rsync -av \
+  --exclude '.git/' \
+  --exclude 'bin/' \
+  --exclude 'obj/' \
+  --exclude 'node_modules/' \
+  compose.prod.yml Backend/ deploy/ \
+  deploy@134.209.20.89:/opt/snakefortwo/
+```
+
+This deploys only the backend-related files:
+
+```text
+compose.prod.yml
+Backend/
+deploy/
+```
+
+It does not deploy:
+
+```text
+Frontend/
+secrets/
+.git/
+node_modules/
+bin/
+obj/
+```
+
+The server-side `.env` file is not copied from the repository and remains server-specific.
+
+After files are uploaded, the production stack is validated before it is started:
+
+```bash
+cd /opt/snakefortwo
+
+docker compose \
+  --env-file .env \
+  -f compose.prod.yml \
+  config
+```
+
+Then the deployment is built and started:
+
+```bash
+docker compose \
+  --env-file .env \
+  -f compose.prod.yml \
+  up --build -d
+```
+
+This command:
+
+1. builds the .NET backend image;
+2. creates or reuses the Docker network;
+3. starts the backend;
+4. waits for `/health` to return successfully;
+5. starts Caddy;
+6. makes the API available over HTTPS.
+
+The first successful deployment showed:
+
+```text
+Container snakefortwo-backend-1  Healthy
+Container snakefortwo-caddy-1    Started
+```
+
+---
+
+## 11. Deployment verification
+
+The production health endpoint was tested externally:
+
+```bash
+curl -i https://api.snakefortwo.com/health
+```
+
+It returned:
+
+```text
+healthy
+```
+
+That confirms the complete route works:
+
+```text
+Public DNS
+    ↓
+api.snakefortwo.com
+    ↓
+DigitalOcean London IP
+    ↓
+Caddy HTTPS certificate and reverse proxy
+    ↓
+Docker internal network
+    ↓
+ASP.NET Core backend
+    ↓
+/health endpoint
+```
+
+It also confirms that:
+
+* DNS points to the correct server;
+* the DigitalOcean firewall allows HTTP/HTTPS traffic;
+* Docker networking is working;
+* Caddy is running;
+* Caddy obtained a valid certificate;
+* the .NET application is healthy;
+* the backend is reachable through the intended public hostname.
+
+---
+
+## 12. How future manual releases work
+
+For a normal backend update, the workflow is:
+
+```bash
+# On local WSL machine, from the monorepo root
+rsync -av \
+  --exclude '.git/' \
+  --exclude 'bin/' \
+  --exclude 'obj/' \
+  --exclude 'node_modules/' \
+  compose.prod.yml Backend/ deploy/ \
+  deploy@134.209.20.89:/opt/snakefortwo/
+```
+
+Then connect to the server:
+
+```bash
+ssh deploy@134.209.20.89
+```
+
+And rebuild/restart the stack:
+
+```bash
+cd /opt/snakefortwo
+
+docker compose \
+  --env-file .env \
+  -f compose.prod.yml \
+  up --build -d
+```
+
+Useful verification commands are:
+
+```bash
+docker compose --env-file .env -f compose.prod.yml ps
+```
+
+```bash
+docker compose --env-file .env -f compose.prod.yml logs -f backend
+```
+
+```bash
+docker compose --env-file .env -f compose.prod.yml logs -f caddy
+```
+
+```bash
+curl -i https://api.snakefortwo.com/health
+```
+
+---
+
+## 13. Current state versus remaining production work
+
+The backend infrastructure is now deployed and publicly reachable.
+
+Still to be completed:
+
+* deploy the Angular frontend to Cloudflare Pages;
+* connect `snakefortwo.com` to Cloudflare Pages;
+* configure backend CORS to allow the frontend origin;
+* set the frontend’s API/WebSocket base URL to:
+
+```text
+https://api.snakefortwo.com
+wss://api.snakefortwo.com
+```
+
+* test a real WebSocket game connection from the browser;
+* introduce secrets through `.env` or a secrets manager once authentication, JWT keys, database credentials, or third-party API keys exist;
+* add database/Redis architecture when the game becomes stateful;
+* replace manual `rsync` deployment with GitHub Actions over SSH;
+* add monitoring, logs, alerts, and basic rate limiting before public launch.

@@ -1,14 +1,18 @@
 import { Direction } from '../../../core/realtime/protocol.models';
 import { isOppositeDirection } from './direction';
 
+export type PredictedInputSource = 'local' | 'server';
+
 export interface PredictedInput {
-  targetTick: number;
+  playerId: string;
+  effectiveTick: number;
   direction: Direction;
   clientTime: number;
-  sequence: number;
+  sequence: number | null;
+  source: PredictedInputSource;
 }
 
-export interface SelectPredictedInputTargetTickInput {
+export interface SelectPredictedInputEffectiveTickInput {
   currentTick: number;
   tileAlpha: number;
   tickDurationMs: number;
@@ -16,8 +20,9 @@ export interface SelectPredictedInputTargetTickInput {
 }
 
 export interface SchedulePredictedInputInput {
+  playerId: string;
   pendingInputs: PredictedInput[];
-  targetTick: number;
+  effectiveTick: number;
   currentDirection: Direction;
   requestedDirection: Direction;
   clientTime: number;
@@ -40,8 +45,8 @@ export type ScheduledPredictedInputResult =
   | ScheduledPredictedInputAccepted
   | ScheduledPredictedInputRejected;
 
-export function selectPredictedInputTargetTick(
-  input: SelectPredictedInputTargetTickInput,
+export function selectPredictedInputEffectiveTick(
+  input: SelectPredictedInputEffectiveTickInput,
 ): number {
   const elapsedIntoTickMs = clamp01(input.tileAlpha) * Math.max(1, input.tickDurationMs);
   const graceMs = Math.max(0, input.inputGraceMs);
@@ -52,7 +57,9 @@ export function selectPredictedInputTargetTick(
 export function schedulePredictedInput(
   input: SchedulePredictedInputInput,
 ): ScheduledPredictedInputResult {
-  const orderedPending = [...input.pendingInputs].sort((a, b) => a.targetTick - b.targetTick);
+  const orderedPending = input.pendingInputs
+    .filter((pendingInput) => pendingInput.playerId === input.playerId)
+    .sort((a, b) => a.effectiveTick - b.effectiveTick);
   const previousDirection =
     orderedPending.length > 0
       ? orderedPending[orderedPending.length - 1].direction
@@ -66,15 +73,17 @@ export function schedulePredictedInput(
     return { accepted: false, reason: 'directReversal', queue: orderedPending };
   }
 
-  const lastTargetTick =
+  const lastEffectiveTick =
     orderedPending.length > 0
-      ? orderedPending[orderedPending.length - 1].targetTick
+      ? orderedPending[orderedPending.length - 1].effectiveTick
       : Number.NEGATIVE_INFINITY;
   const predictedInput = {
-    targetTick: Math.max(input.targetTick, lastTargetTick + 1),
+    playerId: input.playerId,
+    effectiveTick: Math.max(input.effectiveTick, lastEffectiveTick + 1),
     direction: input.requestedDirection,
     clientTime: input.clientTime,
     sequence: input.sequence,
+    source: 'local' as const,
   };
 
   return {

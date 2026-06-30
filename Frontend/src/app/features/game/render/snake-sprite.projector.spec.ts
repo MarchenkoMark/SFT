@@ -61,7 +61,16 @@ describe('snake sprite projector', () => {
 
     const projected = projectGameStateToRenderTick(state, 1, 2, {
       localPlayerId: 'player-1',
-      predictedInputs: [{ targetTick: 2, direction: 'Up', clientTime: 1250, sequence: 1 }],
+      predictedInputs: [
+        {
+          playerId: 'player-1',
+          effectiveTick: 2,
+          direction: 'Up',
+          clientTime: 1250,
+          sequence: 1,
+          source: 'local',
+        },
+      ],
     });
     const model = buildGameBoardRenderModel({
       state: projected,
@@ -71,6 +80,46 @@ describe('snake sprite projector', () => {
 
     expect(model.snakes[0].segments[0]).toEqual({ x: 2, y: 0.2 });
     expect(model.snakes[0].segments[1]).toEqual({ x: 1.2, y: 0 });
+  });
+
+  it('applies a server-accepted opponent turn at its effective tile boundary', () => {
+    const state: AuthoritativeGameState = {
+      board: { width: 16, height: 12 },
+      status: 'Running',
+      snakes: [
+        createSnake('player-1', 'Left', [
+          { x: 10, y: 6 },
+          { x: 11, y: 6 },
+        ]),
+        createSnake('player-2', 'Right', [
+          { x: 1, y: 0 },
+          { x: 0, y: 0 },
+        ]),
+      ],
+      food: [],
+    };
+
+    const projected = projectGameStateToRenderTick(state, 1, 2, {
+      localPlayerId: 'player-1',
+      predictedInputs: [
+        {
+          playerId: 'player-2',
+          effectiveTick: 2,
+          direction: 'Up',
+          clientTime: 1250,
+          sequence: null,
+          source: 'server',
+        },
+      ],
+    });
+    const model = buildGameBoardRenderModel({
+      state: projected,
+      localPlayerId: 'player-1',
+      tileAlpha: 0.2,
+    });
+
+    expect(model.snakes[1].segments[0]).toEqual({ x: 2, y: 0.2 });
+    expect(model.snakes[1].segments[1]).toEqual({ x: 1.2, y: 0 });
   });
 
   it('applies a grace-window local turn to the current tile before moving out', () => {
@@ -88,7 +137,16 @@ describe('snake sprite projector', () => {
 
     const projected = projectGameStateToRenderTick(state, 3, 3, {
       localPlayerId: 'player-1',
-      predictedInputs: [{ targetTick: 3, direction: 'Up', clientTime: 1550, sequence: 1 }],
+      predictedInputs: [
+        {
+          playerId: 'player-1',
+          effectiveTick: 3,
+          direction: 'Up',
+          clientTime: 1550,
+          sequence: 1,
+          source: 'local',
+        },
+      ],
     });
     const model = buildGameBoardRenderModel({
       state: projected,

@@ -5,8 +5,8 @@ import { Direction } from '../../../core/realtime/protocol.models';
 import { RealtimeGatewayService } from '../../../core/realtime/realtime-gateway.service';
 import { RoomQuery } from '../../room/room.query';
 import {
+  selectPredictedInputEffectiveTick,
   schedulePredictedInput,
-  selectPredictedInputTargetTick,
 } from '../netcode/local-prediction';
 import { computeRenderPhase } from '../netcode/render-clock';
 import { projectGameStateToRenderTick } from '../render/snake-sprite.projector';
@@ -30,7 +30,8 @@ export class PlayerInputFacade {
     }
 
     const clientTime = Math.round(this.clockSync.estimatedServerNow());
-    if (!this.applyLocalPrediction(direction, clientTime)) {
+    const clientSequence = this.localPredictionStore.nextSequence();
+    if (!this.applyLocalPrediction(direction, clientTime, clientSequence)) {
       return;
     }
 
@@ -39,10 +40,15 @@ export class PlayerInputFacade {
       roomId,
       direction,
       clientTime,
+      clientSequence,
     });
   }
 
-  private applyLocalPrediction(direction: Direction, clientTime: number): boolean {
+  private applyLocalPrediction(
+    direction: Direction,
+    clientTime: number,
+    clientSequence: number,
+  ): boolean {
     const session = this.gameSessionQuery.snapshot;
     const latestFrame = session.latestFrame;
     const timing = session.timing;
@@ -74,26 +80,27 @@ export class PlayerInputFacade {
       return true;
     }
 
-    const targetTick = selectPredictedInputTargetTick({
+    const effectiveTick = selectPredictedInputEffectiveTick({
       currentTick: phase.currentTick,
       tileAlpha: phase.tileAlpha,
       tickDurationMs: timing.tickDurationMs,
       inputGraceMs: timing.animationFrameDurationMs,
     });
     const scheduled = schedulePredictedInput({
-      pendingInputs: this.localPredictionStore.snapshot,
-      targetTick,
+      playerId: session.localPlayerId,
+      pendingInputs: this.localPredictionStore.inputsForPlayer(session.localPlayerId),
+      effectiveTick,
       currentDirection: localSnake.direction,
       requestedDirection: direction,
       clientTime,
-      sequence: this.localPredictionStore.nextSequence(),
+      sequence: clientSequence,
     });
 
     if (!scheduled.accepted) {
       return false;
     }
 
-    this.localPredictionStore.setPendingInputs(scheduled.queue);
+    this.localPredictionStore.setPendingInputsForPlayer(session.localPlayerId, scheduled.queue);
     return true;
   }
 }

@@ -45,7 +45,8 @@ public abstract record ServerMessage
 public sealed record ClientInputMessage(
     string RoomId,
     DirectionDto Direction,
-    long ClientTime);
+    long ClientTime,
+    int? ClientSequence = null);
 
 public sealed record RoomCreatedMessage(
     string RoomId,
@@ -122,6 +123,19 @@ public sealed record CorrectionMessage(
     AuthoritativeGameStateDto State) : ServerMessage
 {
     public override string Type => "correction";
+}
+
+public sealed record TurnIntentAcceptedMessage(
+    string RoomId,
+    string MatchId,
+    string PlayerId,
+    DirectionDto Direction,
+    long EffectiveTick,
+    long ClientTime,
+    int? ClientSequence,
+    long ServerReceivedAt) : ServerMessage
+{
+    public override string Type => "turnIntentAccepted";
 }
 
 public sealed record GameFinishedMessage(

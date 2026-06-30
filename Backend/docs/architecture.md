@@ -146,11 +146,12 @@ Client messages are allowed to have different payload shapes depending on messag
 {
   "type": "input",
   "direction": "Left",
-  "clientTime": 1234567890
+  "clientTime": 1234567890,
+  "clientSequence": 7
 }
 ```
 
-A small client-side sequence can be added later for duplicate detection and ordering, but it is not required for the initial authoritative frame contract.
+`clientSequence` is assigned by the sending client and echoed in `turnIntentAccepted` so the sender can replace a local optimistic turn with the server-accepted effective tick.
 
 Room messages use their own payloads:
 
@@ -182,6 +183,7 @@ Server messages:
 - `roomState`: players, ready flags, room status.
 - `gameStarting`: countdown, start server time, timing settings, deterministic seed.
 - `gameStarted`: assigned player id/seat and initial state.
+- `turnIntentAccepted`: server-validated input intent, broadcast immediately so clients can render a future turn before the next full frame arrives.
 - `authoritativeFrame`: full authoritative board state for the current tile tick, server time, and state hash.
 - `correction`: full authoritative state for a previous/current tick when rollback changes already-broadcast history.
 - `gameFinished`: result and final state.
@@ -215,7 +217,25 @@ The authoritative gameplay payload should be object-oriented rather than a 2D en
 }
 ```
 
-The important semantic detail is that `head` and `direction` describe where the snake moves from for this tile tick, not a destination cell.
+The important semantic detail is that `head` and `direction` describe where the snake moves from for this tile tick, not a destination cell. For a frame at tick `T`, `direction` is the outgoing direction used for movement from tick `T` to tick `T + 1`.
+
+When the server accepts a player input, it broadcasts the accepted turn intent immediately:
+
+```json
+{
+  "type": "turnIntentAccepted",
+  "roomId": "abracadabra",
+  "matchId": "match-1",
+  "playerId": "player-a",
+  "direction": "Up",
+  "effectiveTick": 42,
+  "clientTime": 1234567890,
+  "clientSequence": 7,
+  "serverReceivedAt": 1234567990
+}
+```
+
+`effectiveTick: 42` means the accepted direction applies to movement from tick `42` to tick `43`. This message is an early render hint and acknowledgement, not a replacement for the next authoritative frame.
 
 For early development, JSON is easier. For production polish, a compact binary encoding can reduce payload size, but the architecture should not depend on it.
 
@@ -276,6 +296,7 @@ Buffering rule:
 3. Insert the direction at the earliest tick greater than or equal to `targetTick` where it can be legally applied.
 4. A direction is legal if it is not a direct 180-degree reversal from the previously scheduled/applied direction.
 5. If two inputs arrive for the same tick, the first legal one applies at that tick and later legal inputs are carried to following ticks.
+6. Broadcast `turnIntentAccepted` as soon as the input is accepted, using the inserted tick as `effectiveTick`.
 
 Example:
 

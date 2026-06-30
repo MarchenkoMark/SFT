@@ -34,6 +34,11 @@ public sealed class RollbackGameSession
 
     public GameTick CurrentTick => CurrentState.Tick;
 
+    public IReadOnlyDictionary<PlayerId, Direction> OutgoingDirectionsAt(GameTick tick) =>
+        _inputTimelines.ToDictionary(
+            pair => pair.Key,
+            pair => pair.Value.DirectionAt(tick));
+
     public GameFrame AdvanceOneTick() => AdvanceOneTick(trimHistory: true);
 
     public GameInputResult SubmitInput(PlayerId playerId, GameTick targetTick, Direction direction)

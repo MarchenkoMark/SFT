@@ -231,9 +231,15 @@ internal sealed class WebSocketEndpoint
                             "input requires roomId, direction, and clientTime.");
                     }
 
+                    var clientSequence = TryGetInt32(
+                        document.RootElement,
+                        "clientSequence",
+                        out var parsedClientSequence)
+                        ? parsedClientSequence
+                        : (int?)null;
                     result = _roomCoordinator.SubmitInput(
                         connectionId,
-                        new ClientInputMessage(inputRoomId, direction, clientTime),
+                        new ClientInputMessage(inputRoomId, direction, clientTime, clientSequence),
                         _timeProvider.GetUtcNow().ToUnixTimeMilliseconds());
                     break;
 
@@ -351,6 +357,13 @@ internal sealed class WebSocketEndpoint
         value = default;
         return root.TryGetProperty(propertyName, out var property) &&
             property.TryGetInt64(out value);
+    }
+
+    private static bool TryGetInt32(JsonElement root, string propertyName, out int value)
+    {
+        value = default;
+        return root.TryGetProperty(propertyName, out var property) &&
+            property.TryGetInt32(out value);
     }
 
     private static bool TryGetDirection(JsonElement root, out DirectionDto direction)

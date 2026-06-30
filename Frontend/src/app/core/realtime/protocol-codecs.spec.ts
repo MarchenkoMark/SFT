@@ -68,6 +68,30 @@ describe('decodeServerMessage', () => {
     }
   });
 
+  it('decodes accepted turn intents with effective outgoing tick semantics', () => {
+    const decoded = decodeServerMessage(
+      JSON.stringify({
+        type: 'turnIntentAccepted',
+        roomId: 'ROOM1',
+        matchId: 'match-1',
+        playerId: 'player-2',
+        direction: 'Up',
+        effectiveTick: 12,
+        clientTime: 1500,
+        clientSequence: null,
+        serverReceivedAt: 1610,
+      }),
+    );
+
+    expect(decoded.ok).toBe(true);
+    if (decoded.ok && decoded.message.type === 'turnIntentAccepted') {
+      expect(decoded.message.playerId).toBe('player-2');
+      expect(decoded.message.direction).toBe('Up');
+      expect(decoded.message.effectiveTick).toBe(12);
+      expect(decoded.message.clientSequence).toBeNull();
+    }
+  });
+
   it('ignores unknown message types without treating them as malformed known payloads', () => {
     const decoded = decodeServerMessage(JSON.stringify({ type: 'futureMessage' }));
 

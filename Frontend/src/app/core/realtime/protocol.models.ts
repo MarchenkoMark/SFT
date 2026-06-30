@@ -74,6 +74,7 @@ export type ClientMessage =
       roomId: string;
       direction: Direction;
       clientTime: number;
+      clientSequence: number;
     }
   | { type: 'ping'; clientTime: number; sampleId: string };
 
@@ -147,6 +148,18 @@ export interface CorrectionMessage {
   state: AuthoritativeGameState;
 }
 
+export interface TurnIntentAcceptedMessage {
+  type: 'turnIntentAccepted';
+  roomId: string;
+  matchId: string;
+  playerId: string;
+  direction: Direction;
+  effectiveTick: number;
+  clientTime: number;
+  clientSequence: number | null;
+  serverReceivedAt: number;
+}
+
 export interface GameFinishedMessage {
   type: 'gameFinished';
   roomId: string;
@@ -179,6 +192,7 @@ export type ServerMessage =
   | GameStartedMessage
   | AuthoritativeFrameMessage
   | CorrectionMessage
+  | TurnIntentAcceptedMessage
   | GameFinishedMessage
   | RealtimeErrorMessage
   | PongMessage;

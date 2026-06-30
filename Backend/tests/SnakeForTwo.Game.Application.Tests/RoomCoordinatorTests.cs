@@ -183,10 +183,21 @@ public sealed class RoomCoordinatorTests
             options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
         var created = StartGame(coordinator);
 
-        coordinator.SubmitInput(
+        var inputResult = coordinator.SubmitInput(
             "connection-1",
-            new ClientInputMessage(created.RoomId, DirectionDto.Up, ClientTime: 50),
+            new ClientInputMessage(created.RoomId, DirectionDto.Up, ClientTime: 50, ClientSequence: 7),
             serverReceivedAt: 50);
+
+        var accepted = Assert.IsType<TurnIntentAcceptedMessage>(
+            Assert.Single(inputResult.Messages).Message);
+        Assert.Equal(created.RoomId, accepted.RoomId);
+        Assert.Equal("match-1", accepted.MatchId);
+        Assert.Equal(created.PlayerId, accepted.PlayerId);
+        Assert.Equal(DirectionDto.Up, accepted.Direction);
+        Assert.Equal(0, accepted.EffectiveTick);
+        Assert.Equal(50, accepted.ClientTime);
+        Assert.Equal(7, accepted.ClientSequence);
+        Assert.Equal(50, accepted.ServerReceivedAt);
 
         clock.Advance(TimeSpan.FromMilliseconds(500));
         var result = coordinator.ProcessTimers();
@@ -209,10 +220,16 @@ public sealed class RoomCoordinatorTests
             options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
         var created = StartGame(coordinator);
 
-        coordinator.SubmitInput(
+        var inputResult = coordinator.SubmitInput(
             "connection-1",
             new ClientInputMessage(created.RoomId, DirectionDto.Up, ClientTime: 150),
             serverReceivedAt: 150);
+
+        var accepted = Assert.IsType<TurnIntentAcceptedMessage>(
+            Assert.Single(inputResult.Messages).Message);
+        Assert.Equal(created.PlayerId, accepted.PlayerId);
+        Assert.Equal(DirectionDto.Up, accepted.Direction);
+        Assert.Equal(1, accepted.EffectiveTick);
 
         clock.Advance(TimeSpan.FromMilliseconds(500));
         var firstTick = coordinator.ProcessTimers();
@@ -222,7 +239,7 @@ public sealed class RoomCoordinatorTests
             .OfType<AuthoritativeFrameMessage>()
             .Single(message => message.Tick == 1);
         var firstLocalSnake = frameOne.State.Snakes.Single(snake => snake.PlayerId == created.PlayerId);
-        Assert.Equal(DirectionDto.Right, firstLocalSnake.Direction);
+        Assert.Equal(DirectionDto.Up, firstLocalSnake.Direction);
         Assert.Equal(new CellDto(9, 8), firstLocalSnake.Head);
 
         clock.Advance(TimeSpan.FromMilliseconds(500));

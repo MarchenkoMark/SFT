@@ -327,9 +327,28 @@ public sealed class GameRoomCoordinator(
                 targetTick,
                 ToDomainDirection(input.Direction));
 
-            var messages = inputResult.Corrections
-                .Select(frame => Broadcast(room, ToCorrectionMessage(room, frame)))
-                .ToList();
+            var messages = new List<OutboundServerMessage>();
+            if (inputResult is
+                {
+                    Status: InputSchedulingStatus.Scheduled,
+                    ScheduledTick: not null
+                })
+            {
+                messages.Add(Broadcast(
+                    room,
+                    new TurnIntentAcceptedMessage(
+                        room.Id,
+                        room.Match.MatchId,
+                        player.PlayerId,
+                        input.Direction,
+                        inputResult.ScheduledTick.Value.Value,
+                        input.ClientTime,
+                        input.ClientSequence,
+                        serverReceivedAt)));
+            }
+
+            messages.AddRange(inputResult.Corrections
+                .Select(frame => Broadcast(room, ToCorrectionMessage(room, frame))));
 
             if (room.Match.Session.CurrentState.Status == GameStatus.Finished)
             {
@@ -543,7 +562,11 @@ public sealed class GameRoomCoordinator(
                 match.MatchId,
                 result,
                 reason,
-                match.Session is null ? null : ToAuthoritativeGameStateDto(match.Session.CurrentState))));
+                match.Session is null
+                    ? null
+                    : ToAuthoritativeGameStateDto(WithOutgoingDirections(
+                        match.Session.CurrentState,
+                        match.Session.OutgoingDirectionsAt(match.Session.CurrentTick))))));
         messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
     }
 
@@ -625,25 +648,27 @@ public sealed class GameRoomCoordinator(
     private AuthoritativeFrameMessage ToAuthoritativeFrameMessage(RoomRecord room, GameFrame frame)
     {
         var match = room.Match ?? throw new InvalidOperationException("A frame requires an active match.");
+        var state = WithOutgoingDirections(frame.State, match.Session!.OutgoingDirectionsAt(frame.Tick));
         return new AuthoritativeFrameMessage(
             room.Id,
             match.MatchId,
             frame.Tick.Value,
             FrameServerTime(match, frame.Tick),
-            frame.StateHash,
-            ToAuthoritativeGameStateDto(frame.State));
+            SnakeGameEngine.ComputeStateHash(state),
+            ToAuthoritativeGameStateDto(state));
     }
 
     private CorrectionMessage ToCorrectionMessage(RoomRecord room, GameFrame frame)
     {
         var match = room.Match ?? throw new InvalidOperationException("A correction requires an active match.");
+        var state = WithOutgoingDirections(frame.State, match.Session!.OutgoingDirectionsAt(frame.Tick));
         return new CorrectionMessage(
             room.Id,
             match.MatchId,
             frame.Tick.Value,
             FrameServerTime(match, frame.Tick),
-            frame.StateHash,
-            ToAuthoritativeGameStateDto(frame.State));
+            SnakeGameEngine.ComputeStateHash(state),
+            ToAuthoritativeGameStateDto(state));
     }
 
     private long FrameServerTime(MatchRecord match, GameTick tick) =>
@@ -654,6 +679,14 @@ public sealed class GameRoomCoordinator(
             session.CurrentTick,
             session.CurrentState.Copy(),
             SnakeGameEngine.ComputeStateHash(session.CurrentState));
+
+    private static GameState WithOutgoingDirections(
+        GameState state,
+        IReadOnlyDictionary<PlayerId, Direction> outgoingDirections) =>
+        state.With(snakes: state.Snakes.Select(snake =>
+            outgoingDirections.TryGetValue(snake.PlayerId, out var outgoingDirection)
+                ? snake.With(outgoingDirection)
+                : snake.With()));
 
     private static AuthoritativeGameStateDto ToAuthoritativeGameStateDto(GameState state) =>
         new(

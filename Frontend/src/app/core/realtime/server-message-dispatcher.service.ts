@@ -75,6 +75,10 @@ export class ServerMessageDispatcherService {
         this.localPredictionStore.removeCoveredInputs(message.tick);
         return;
 
+      case 'turnIntentAccepted':
+        this.localPredictionStore.acceptServerIntent(message);
+        return;
+
       case 'gameFinished':
         this.localPredictionStore.reset();
         this.gameSessionStore.finished(message);

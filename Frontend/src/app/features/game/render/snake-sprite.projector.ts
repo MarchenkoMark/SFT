@@ -114,16 +114,16 @@ export function projectGameStateToRenderTick(
     return state;
   }
 
-  const predictedInputs = options.localPlayerId
-    ? options.predictedInputs.filter((input) => input.targetTick >= sourceTick)
-    : [];
-  const inputsByTick = new Map(
-    predictedInputs.map((input) => [input.targetTick, input.direction]),
+  const inputsByPlayerAndTick = buildInputsByPlayerAndTick(
+    options.predictedInputs.filter((input) => input.effectiveTick >= sourceTick),
   );
   const projectedSnakes =
     ticksToPredict === 0
       ? state.snakes.map((snake) =>
-          applyRenderTickDirection(snake, options.localPlayerId, inputsByTick.get(renderTick)),
+          applyRenderTickDirection(
+            snake,
+            inputsByPlayerAndTick.get(snake.playerId)?.get(renderTick),
+          ),
         )
       : state.snakes.map((snake) =>
           predictSnakeToTick(
@@ -131,8 +131,7 @@ export function projectGameStateToRenderTick(
             state.board,
             sourceTick,
             renderTick,
-            options.localPlayerId,
-            inputsByTick,
+            inputsByPlayerAndTick.get(snake.playerId) ?? new Map(),
           ),
         );
 
@@ -202,7 +201,6 @@ function predictSnakeToTick(
   board: Board,
   sourceTick: number,
   renderTick: number,
-  localPlayerId: string | null,
   inputsByTick: Map<number, AuthoritativeSnake['direction']>,
 ): AuthoritativeSnake {
   if (!snake.alive || snake.body.length === 0) {
@@ -213,18 +211,13 @@ function predictSnakeToTick(
   let direction = snake.direction;
 
   for (let tick = sourceTick; tick < renderTick; tick++) {
-    direction = nextDirectionForTick(snake.playerId, localPlayerId, direction, inputsByTick.get(tick));
+    direction = nextDirectionForTick(direction, inputsByTick.get(tick));
     const vector = directionVector(direction);
     const nextHead = wrapCell(moveCell(body[0], vector), board);
     body = [nextHead, ...body.slice(0, -1)];
   }
 
-  direction = nextDirectionForTick(
-    snake.playerId,
-    localPlayerId,
-    direction,
-    inputsByTick.get(renderTick),
-  );
+  direction = nextDirectionForTick(direction, inputsByTick.get(renderTick));
 
   return {
     ...snake,
@@ -236,26 +229,42 @@ function predictSnakeToTick(
 
 function applyRenderTickDirection(
   snake: AuthoritativeSnake,
-  localPlayerId: string | null,
   requestedDirection: AuthoritativeSnake['direction'] | undefined,
 ): AuthoritativeSnake {
-  const direction = nextDirectionForTick(
-    snake.playerId,
-    localPlayerId,
-    snake.direction,
-    requestedDirection,
-  );
+  const direction = nextDirectionForTick(snake.direction, requestedDirection);
 
   return direction === snake.direction ? snake : { ...snake, direction };
 }
 
 function nextDirectionForTick(
-  playerId: string,
-  localPlayerId: string | null,
   currentDirection: AuthoritativeSnake['direction'],
   requestedDirection: AuthoritativeSnake['direction'] | undefined,
 ): AuthoritativeSnake['direction'] {
-  return playerId === localPlayerId && requestedDirection ? requestedDirection : currentDirection;
+  return requestedDirection ?? currentDirection;
+}
+
+function buildInputsByPlayerAndTick(
+  predictedInputs: PredictedInput[],
+): Map<string, Map<number, AuthoritativeSnake['direction']>> {
+  const inputsByPlayerAndTick = new Map<string, Map<number, AuthoritativeSnake['direction']>>();
+  const orderedInputs = [...predictedInputs].sort(
+    (a, b) =>
+      a.effectiveTick - b.effectiveTick ||
+      (a.sequence ?? 0) - (b.sequence ?? 0) ||
+      (a.source === b.source ? 0 : a.source === 'server' ? 1 : -1),
+  );
+
+  for (const input of orderedInputs) {
+    let inputsByTick = inputsByPlayerAndTick.get(input.playerId);
+    if (!inputsByTick) {
+      inputsByTick = new Map<number, AuthoritativeSnake['direction']>();
+      inputsByPlayerAndTick.set(input.playerId, inputsByTick);
+    }
+
+    inputsByTick.set(input.effectiveTick, input.direction);
+  }
+
+  return inputsByPlayerAndTick;
 }
 
 function moveCell(cell: Cell, vector: DirectionVector): Cell {

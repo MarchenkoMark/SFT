@@ -72,6 +72,8 @@ export function decodeServerMessage(payload: string): DecodeServerMessageResult 
       return decodeAuthoritativeFrame(parsed, 'authoritativeFrame');
     case 'correction':
       return decodeAuthoritativeFrame(parsed, 'correction');
+    case 'turnIntentAccepted':
+      return decodeTurnIntentAccepted(parsed);
     case 'gameFinished':
       return decodeGameFinished(parsed);
     case 'error':
@@ -214,6 +216,45 @@ function decodeAuthoritativeFrame(
       serverTime,
       stateHash,
       state,
+    },
+  };
+}
+
+function decodeTurnIntentAccepted(record: Record<string, unknown>): DecodeServerMessageResult {
+  const roomId = readString(record, 'roomId');
+  const matchId = readString(record, 'matchId');
+  const playerId = readString(record, 'playerId');
+  const direction = readEnum<Direction>(record, 'direction', directions);
+  const effectiveTick = readNumber(record, 'effectiveTick');
+  const clientTime = readNumber(record, 'clientTime');
+  const clientSequence = readOptionalNumber(record, 'clientSequence');
+  const serverReceivedAt = readNumber(record, 'serverReceivedAt');
+
+  if (
+    !roomId ||
+    !matchId ||
+    !playerId ||
+    !direction ||
+    effectiveTick === undefined ||
+    clientTime === undefined ||
+    clientSequence === undefined ||
+    serverReceivedAt === undefined
+  ) {
+    return { ok: false, reason: 'turnIntentAccepted was missing required fields.' };
+  }
+
+  return {
+    ok: true,
+    message: {
+      type: 'turnIntentAccepted',
+      roomId,
+      matchId,
+      playerId,
+      direction,
+      effectiveTick,
+      clientTime,
+      clientSequence,
+      serverReceivedAt,
     },
   };
 }
@@ -487,6 +528,18 @@ function readOptionalString(record: Record<string, unknown>, propertyName: strin
   }
 
   return typeof value === 'string' ? value : null;
+}
+
+function readOptionalNumber(
+  record: Record<string, unknown>,
+  propertyName: string,
+): number | null | undefined {
+  const value = record[propertyName];
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
 function readNumber(record: Record<string, unknown>, propertyName: string): number | undefined {

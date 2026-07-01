@@ -66,7 +66,22 @@ jobs:
           GRAFANA_OTLP_ENDPOINT: ${{ secrets.GRAFANA_OTLP_ENDPOINT }}
           GRAFANA_OTLP_HEADERS: ${{ secrets.GRAFANA_OTLP_HEADERS }}
         run: |
-          if [ -z "${GRAFANA_OTLP_ENDPOINT}" ] || [ -z "${GRAFANA_OTLP_HEADERS}" ]; then
+          normalize_env_value() {
+            key="$1"
+            value="$2"
+            value="${value#export }"
+            value="${value#${key}=}"
+            value="${value%\"}"
+            value="${value#\"}"
+            value="${value%\'}"
+            value="${value#\'}"
+            printf '%s' "$value"
+          }
+
+          otlp_endpoint="$(normalize_env_value OTEL_EXPORTER_OTLP_ENDPOINT "$GRAFANA_OTLP_ENDPOINT")"
+          otlp_headers="$(normalize_env_value OTEL_EXPORTER_OTLP_HEADERS "$GRAFANA_OTLP_HEADERS")"
+
+          if [ -z "${otlp_endpoint}" ] || [ -z "${otlp_headers}" ]; then
             echo "::error::Add GRAFANA_OTLP_ENDPOINT and GRAFANA_OTLP_HEADERS repository secrets before deploying."
             exit 1
           fi
@@ -78,8 +93,8 @@ jobs:
             printf 'OTEL_SERVICE_NAME=SnakeForTwo.Api\n'
             printf 'OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.namespace=snakefortwo\n'
             printf 'OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\n'
-            printf 'OTEL_EXPORTER_OTLP_ENDPOINT=%s\n' "$GRAFANA_OTLP_ENDPOINT"
-            printf 'OTEL_EXPORTER_OTLP_HEADERS=%s\n' "$GRAFANA_OTLP_HEADERS"
+            printf 'OTEL_EXPORTER_OTLP_ENDPOINT=%s\n' "$otlp_endpoint"
+            printf 'OTEL_EXPORTER_OTLP_HEADERS=%s\n' "$otlp_headers"
           } > "$telemetry_env"
           chmod 600 "$telemetry_env"
 

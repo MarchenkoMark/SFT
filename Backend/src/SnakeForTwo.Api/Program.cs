@@ -2,6 +2,7 @@ using System.Reflection;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using SnakeForTwo.Api;
 using SnakeForTwo.Game.Application;
 using SnakeForTwo.Infrastructure;
@@ -43,6 +44,15 @@ builder.Services.AddOpenTelemetry()
         if (otlpEndpointConfigured)
         {
             metrics.AddOtlpExporter();
+        }
+    })
+    .WithTracing(tracing =>
+    {
+        tracing.AddAspNetCoreInstrumentation();
+
+        if (otlpEndpointConfigured)
+        {
+            tracing.AddOtlpExporter();
         }
     });
 

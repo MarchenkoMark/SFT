@@ -13,6 +13,116 @@ partial class SnakeForTwoDbContextModelSnapshot : ModelSnapshot
     {
         modelBuilder.HasAnnotation("ProductVersion", "10.0.0");
 
+        modelBuilder.Entity("SnakeForTwo.Infrastructure.Persistence.UserAccountEntity", b =>
+        {
+            b.Property<Guid>("Id")
+                .HasColumnType("uuid")
+                .HasColumnName("id");
+
+            b.Property<DateTimeOffset>("CreatedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            b.Property<string>("Email")
+                .HasMaxLength(320)
+                .HasColumnType("character varying(320)")
+                .HasColumnName("email");
+
+            b.Property<DateTimeOffset>("LastSignedInAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("last_signed_in_at");
+
+            b.Property<string>("NormalizedEmail")
+                .HasMaxLength(320)
+                .HasColumnType("character varying(320)")
+                .HasColumnName("normalized_email");
+
+            b.Property<string>("NormalizedUsername")
+                .IsRequired()
+                .HasMaxLength(24)
+                .HasColumnType("character varying(24)")
+                .HasColumnName("normalized_username");
+
+            b.Property<string>("PictureUrl")
+                .HasMaxLength(2048)
+                .HasColumnType("character varying(2048)")
+                .HasColumnName("picture_url");
+
+            b.Property<DateTimeOffset>("UpdatedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("updated_at");
+
+            b.Property<string>("Username")
+                .IsRequired()
+                .HasMaxLength(24)
+                .HasColumnType("character varying(24)")
+                .HasColumnName("username");
+
+            b.HasKey("Id");
+
+            b.HasIndex("NormalizedEmail");
+
+            b.HasIndex("NormalizedUsername")
+                .IsUnique();
+
+            b.ToTable("user_accounts", (string)null);
+        });
+
+        modelBuilder.Entity("SnakeForTwo.Infrastructure.Persistence.UserLoginEntity", b =>
+        {
+            b.Property<Guid>("Id")
+                .HasColumnType("uuid")
+                .HasColumnName("id");
+
+            b.Property<DateTimeOffset>("CreatedAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("created_at");
+
+            b.Property<string>("DisplayName")
+                .HasMaxLength(256)
+                .HasColumnType("character varying(256)")
+                .HasColumnName("display_name");
+
+            b.Property<string>("Email")
+                .HasMaxLength(320)
+                .HasColumnType("character varying(320)")
+                .HasColumnName("email");
+
+            b.Property<DateTimeOffset>("LastSignedInAt")
+                .HasColumnType("timestamp with time zone")
+                .HasColumnName("last_signed_in_at");
+
+            b.Property<string>("PictureUrl")
+                .HasMaxLength(2048)
+                .HasColumnType("character varying(2048)")
+                .HasColumnName("picture_url");
+
+            b.Property<string>("Provider")
+                .IsRequired()
+                .HasMaxLength(64)
+                .HasColumnType("character varying(64)")
+                .HasColumnName("provider");
+
+            b.Property<string>("ProviderUserId")
+                .IsRequired()
+                .HasMaxLength(256)
+                .HasColumnType("character varying(256)")
+                .HasColumnName("provider_user_id");
+
+            b.Property<Guid>("UserId")
+                .HasColumnType("uuid")
+                .HasColumnName("user_id");
+
+            b.HasKey("Id");
+
+            b.HasIndex("UserId");
+
+            b.HasIndex("Provider", "ProviderUserId")
+                .IsUnique();
+
+            b.ToTable("user_logins", (string)null);
+        });
+
         modelBuilder.Entity("SnakeForTwo.Infrastructure.Persistence.MatchParticipantEntity", b =>
         {
             b.Property<Guid>("Id")
@@ -66,11 +176,17 @@ partial class SnakeForTwoDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("uuid")
                 .HasColumnName("temporary_user_id");
 
+            b.Property<Guid?>("UserId")
+                .HasColumnType("uuid")
+                .HasColumnName("user_id");
+
             b.HasKey("Id");
 
             b.HasIndex("Score");
 
             b.HasIndex("TemporaryUserId");
+
+            b.HasIndex("UserId");
 
             b.HasIndex("MatchSummaryId", "PlayerId")
                 .IsUnique();
@@ -174,12 +290,35 @@ partial class SnakeForTwoDbContextModelSnapshot : ModelSnapshot
                 .OnDelete(DeleteBehavior.Cascade)
                 .IsRequired();
 
+            b.HasOne("SnakeForTwo.Infrastructure.Persistence.UserAccountEntity", "User")
+                .WithMany()
+                .HasForeignKey("UserId")
+                .OnDelete(DeleteBehavior.SetNull);
+
             b.Navigation("Match");
+
+            b.Navigation("User");
         });
 
         modelBuilder.Entity("SnakeForTwo.Infrastructure.Persistence.MatchSummaryEntity", b =>
         {
             b.Navigation("Participants");
+        });
+
+        modelBuilder.Entity("SnakeForTwo.Infrastructure.Persistence.UserLoginEntity", b =>
+        {
+            b.HasOne("SnakeForTwo.Infrastructure.Persistence.UserAccountEntity", "User")
+                .WithMany("Logins")
+                .HasForeignKey("UserId")
+                .OnDelete(DeleteBehavior.Cascade)
+                .IsRequired();
+
+            b.Navigation("User");
+        });
+
+        modelBuilder.Entity("SnakeForTwo.Infrastructure.Persistence.UserAccountEntity", b =>
+        {
+            b.Navigation("Logins");
         });
     }
 }

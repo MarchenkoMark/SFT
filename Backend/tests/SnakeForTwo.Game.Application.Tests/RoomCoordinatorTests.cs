@@ -215,6 +215,37 @@ public sealed class RoomCoordinatorTests
     }
 
     [Fact]
+    public void Authenticated_room_players_use_account_username_and_are_persisted_with_user_id()
+    {
+        var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var coordinator = CreateCoordinator(options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
+
+        var created = GetCreated(coordinator.CreateRoom(
+            "connection-1",
+            displayName: "Ignored",
+            authenticatedPlayer: new AuthenticatedPlayerIdentity(userId, "MarkPlayer")));
+        coordinator.JoinRoom("connection-2", created.RoomId, displayName: "Grace");
+        coordinator.SetReady("connection-1", created.RoomId, isReady: true);
+        coordinator.SetReady("connection-2", created.RoomId, isReady: true);
+        coordinator.ProcessTimers();
+
+        Assert.Equal(
+            "MarkPlayer",
+            created.Room.Players.Single(player => player.PlayerId == created.PlayerId).DisplayName);
+
+        var result = coordinator.FinishGame(created.RoomId, "teamLost", "engineFinished");
+
+        var finished = Assert.IsType<MatchFinishedEvent>(Assert.Single(result.Events));
+        var first = finished.Summary.Participants.Single(participant => participant.Seat == 1);
+        Assert.Equal(userId, first.UserId);
+        Assert.Equal("MarkPlayer", first.DisplayName);
+
+        var second = finished.Summary.Participants.Single(participant => participant.Seat == 2);
+        Assert.Null(second.UserId);
+        Assert.Equal("Grace", second.DisplayName);
+    }
+
+    [Fact]
     public void Input_inside_grace_window_applies_to_current_tick()
     {
         var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);

@@ -43,6 +43,7 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
         var matches = await dbContext.MatchSummaries
             .AsNoTracking()
             .Include(match => match.Participants)
+            .ThenInclude(participant => participant.User)
             .OrderByDescending(match => match.FinishedAt)
             .Take(ClampLimit(limit))
             .ToListAsync(cancellationToken);
@@ -62,6 +63,7 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
         var match = await dbContext.MatchSummaries
             .AsNoTracking()
             .Include(candidate => candidate.Participants)
+            .ThenInclude(participant => participant.User)
             .SingleOrDefaultAsync(
                 candidate => candidate.MatchId == matchId.Trim(),
                 cancellationToken);
@@ -93,8 +95,9 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
             .Select(participant => new
             {
                 participant.TemporaryUserId,
+                participant.UserId,
                 participant.PlayerId,
-                participant.DisplayName,
+                DisplayName = participant.User != null ? participant.User.Username : participant.DisplayName,
                 participant.Seat,
                 participant.Score,
                 participant.OwnFoodEaten,
@@ -114,6 +117,7 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
             row.Mode,
             row.FinishedAt,
             row.TemporaryUserId,
+            row.UserId,
             row.PlayerId,
             row.DisplayName,
             row.Seat,
@@ -152,6 +156,7 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
             Id = Guid.NewGuid(),
             MatchSummaryId = entity.Id,
             TemporaryUserId = participant.TemporaryUserId,
+            UserId = participant.UserId,
             PlayerId = participant.PlayerId,
             DisplayName = participant.DisplayName,
             Seat = participant.Seat,
@@ -206,8 +211,9 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
     private static MatchParticipantSummary ToSummary(MatchParticipantEntity entity) =>
         new(
             entity.TemporaryUserId,
+            entity.UserId,
             entity.PlayerId,
-            entity.DisplayName,
+            entity.User?.Username ?? entity.DisplayName,
             entity.Seat,
             entity.Alive,
             entity.FinalLength,

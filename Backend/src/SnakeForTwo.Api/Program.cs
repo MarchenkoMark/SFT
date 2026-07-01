@@ -1,5 +1,10 @@
 using System.Reflection;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.Google;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.HttpOverrides;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -31,6 +36,12 @@ var persistenceOptions = builder.Configuration
 var persistenceConnectionString = builder.Configuration.GetConnectionString("SnakeForTwo");
 var persistenceEnabled = persistenceOptions.Enabled ||
     !string.IsNullOrWhiteSpace(persistenceConnectionString);
+var authOptions = builder.Configuration
+    .GetSection(AuthOptions.SectionName)
+    .Get<AuthOptions>() ?? new AuthOptions();
+var googleAuthConfigured =
+    !string.IsNullOrWhiteSpace(builder.Configuration["Authentication:Google:ClientId"]) &&
+    !string.IsNullOrWhiteSpace(builder.Configuration["Authentication:Google:ClientSecret"]);
 
 if (persistenceEnabled && string.IsNullOrWhiteSpace(persistenceConnectionString))
 {
@@ -91,6 +102,82 @@ builder.Logging.AddOpenTelemetry(logging =>
     }
 });
 
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedHost |
+        ForwardedHeaders.XForwardedProto;
+    options.KnownIPNetworks.Clear();
+    options.KnownProxies.Clear();
+});
+if (!string.IsNullOrWhiteSpace(authOptions.DataProtectionKeysPath))
+{
+    builder.Services
+        .AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(authOptions.DataProtectionKeysPath))
+        .SetApplicationName("SnakeForTwo.Api");
+}
+
+var authentication = builder.Services
+    .AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultSignInScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = CookieAuthenticationDefaults.AuthenticationScheme;
+    })
+    .AddCookie(options =>
+    {
+        options.Cookie.Name = authOptions.CookieName;
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.SlidingExpiration = true;
+        options.ExpireTimeSpan = TimeSpan.FromDays(30);
+        options.ClaimsIssuer = ServiceName;
+    });
+
+if (googleAuthConfigured && persistenceEnabled)
+{
+    authentication.AddGoogle(options =>
+    {
+        options.ClientId = builder.Configuration["Authentication:Google:ClientId"]!;
+        options.ClientSecret = builder.Configuration["Authentication:Google:ClientSecret"]!;
+        options.SaveTokens = false;
+        options.Events.OnCreatingTicket = async context =>
+        {
+            var providerUserId = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(providerUserId))
+            {
+                throw new InvalidOperationException("Google did not return a stable user identifier.");
+            }
+
+            var users = context.HttpContext.RequestServices.GetRequiredService<IUserAccountStore>();
+            var pictureUrl = context.User.TryGetProperty("picture", out var pictureProperty) &&
+                pictureProperty.ValueKind == System.Text.Json.JsonValueKind.String
+                ? pictureProperty.GetString()
+                : null;
+            var account = await users.FindOrCreateFromExternalLoginAsync(
+                new ExternalLoginProfile(
+                    "google",
+                    providerUserId,
+                    context.Principal?.FindFirstValue(ClaimTypes.Email),
+                    context.Principal?.FindFirstValue(ClaimTypes.Name),
+                    pictureUrl),
+                TimeProvider.System.GetUtcNow(),
+                context.HttpContext.RequestAborted);
+
+            if (context.Identity is ClaimsIdentity identity)
+            {
+                AccountClaims.AddAccountClaims(identity, account);
+            }
+        };
+    });
+}
+
+builder.Services.AddAuthorization();
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("Frontend", policy =>
@@ -100,7 +187,8 @@ builder.Services.AddCors(options =>
             policy
                 .WithOrigins(allowedCorsOrigins)
                 .AllowAnyHeader()
-                .AllowAnyMethod();
+                .AllowAnyMethod()
+                .AllowCredentials();
         }
     });
 });
@@ -124,6 +212,7 @@ if (persistenceEnabled)
         serviceProvider.GetRequiredService<PostgresMatchSummaryStore>());
     builder.Services.AddScoped<ILeaderboardQuery>(serviceProvider =>
         serviceProvider.GetRequiredService<PostgresMatchSummaryStore>());
+    builder.Services.AddScoped<IUserAccountStore, PostgresUserAccountStore>();
     builder.Services.AddSingleton<BackgroundGameEventPublisher>();
     builder.Services.AddSingleton<IGameEventPublisher>(serviceProvider =>
         serviceProvider.GetRequiredService<BackgroundGameEventPublisher>());
@@ -161,7 +250,10 @@ if (persistenceEnabled && persistenceOptions.ApplyMigrationsOnStartup)
         .MigrateAsync();
 }
 
+app.UseForwardedHeaders();
 app.UseCors("Frontend");
+app.UseAuthentication();
+app.UseAuthorization();
 app.UseWebSockets();
 
 app.Lifetime.ApplicationStarted.Register(() =>
@@ -199,6 +291,7 @@ app.MapGet("/ping", () => Results.Ok(new
 }));
 
 app.MapPersistenceEndpoints(persistenceEnabled);
+app.MapAccountEndpoints(persistenceEnabled);
 
 app.Map("/ws", async context =>
     await context.RequestServices

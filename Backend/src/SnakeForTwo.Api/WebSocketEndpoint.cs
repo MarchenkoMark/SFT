@@ -45,14 +45,16 @@ internal sealed class WebSocketEndpoint
 
         using var socket = await context.WebSockets.AcceptWebSocketAsync();
         var connection = _connections.Register(socket);
+        var authenticatedPlayer = GetAuthenticatedPlayer(context.User);
         _logger.LogInformation(
-            "Player connected: connection {ConnectionId}.",
-            connection.ConnectionId);
+            "Player connected: connection {ConnectionId}, authenticated user {UserId}.",
+            connection.ConnectionId,
+            authenticatedPlayer?.UserId);
         var sendLoop = connection.SendLoopAsync(context.RequestAborted);
 
         try
         {
-            await ReceiveLoopAsync(connection, context.RequestAborted);
+            await ReceiveLoopAsync(connection, authenticatedPlayer, context.RequestAborted);
         }
         catch (OperationCanceledException) when (context.RequestAborted.IsCancellationRequested)
         {
@@ -115,6 +117,7 @@ internal sealed class WebSocketEndpoint
 
     private async Task ReceiveLoopAsync(
         WebSocketClientConnection connection,
+        AuthenticatedPlayerIdentity? authenticatedPlayer,
         CancellationToken cancellationToken)
     {
         var malformedMessages = 0;
@@ -166,6 +169,7 @@ internal sealed class WebSocketEndpoint
             var outcome = await HandleClientMessageAsync(
                 connection.ConnectionId,
                 message,
+                authenticatedPlayer,
                 rateLimiter,
                 CancellationToken.None);
             if (outcome == ClientMessageOutcome.Closed)
@@ -197,6 +201,7 @@ internal sealed class WebSocketEndpoint
     private async ValueTask<ClientMessageOutcome> HandleClientMessageAsync(
         string connectionId,
         string message,
+        AuthenticatedPlayerIdentity? authenticatedPlayer,
         WebSocketMessageRateLimiter rateLimiter,
         CancellationToken cancellationToken)
     {
@@ -256,7 +261,8 @@ internal sealed class WebSocketEndpoint
                         connectionId,
                         TryGetOptionalString(document.RootElement, "displayName", out var createDisplayName)
                             ? createDisplayName
-                            : null);
+                            : null,
+                        authenticatedPlayer);
                     break;
 
                 case "joinRoom":
@@ -270,7 +276,8 @@ internal sealed class WebSocketEndpoint
                         joinRoomId,
                         TryGetOptionalString(document.RootElement, "displayName", out var joinDisplayName)
                             ? joinDisplayName
-                            : null);
+                            : null,
+                        authenticatedPlayer);
                     break;
 
                 case "resumeRoom":
@@ -475,6 +482,15 @@ internal sealed class WebSocketEndpoint
         }
 
         return Enum.TryParse(value, ignoreCase: true, out direction);
+    }
+
+    private static AuthenticatedPlayerIdentity? GetAuthenticatedPlayer(System.Security.Claims.ClaimsPrincipal user)
+    {
+        var userId = AccountClaims.GetUserId(user);
+        var username = AccountClaims.GetUsername(user);
+        return userId is null || string.IsNullOrWhiteSpace(username)
+            ? null
+            : new AuthenticatedPlayerIdentity(userId.Value, username);
     }
 
     private async ValueTask<ClientMessageOutcome> SendMalformedAsync(

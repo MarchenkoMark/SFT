@@ -21,9 +21,16 @@ public interface IRoomIdentityProvider
 
 public interface IRoomCoordinator
 {
-    RoomCommandResult CreateRoom(string connectionId, string? displayName = null);
+    RoomCommandResult CreateRoom(
+        string connectionId,
+        string? displayName = null,
+        AuthenticatedPlayerIdentity? authenticatedPlayer = null);
 
-    RoomCommandResult JoinRoom(string connectionId, string roomId, string? displayName = null);
+    RoomCommandResult JoinRoom(
+        string connectionId,
+        string roomId,
+        string? displayName = null,
+        AuthenticatedPlayerIdentity? authenticatedPlayer = null);
 
     RoomCommandResult ResumeRoom(string connectionId, string roomId, string playerSessionToken);
 
@@ -94,7 +101,10 @@ public sealed class GameRoomCoordinator(
         lifecycleLogger ?? NullRoomLifecycleLogger.Instance;
     private readonly IGameMetrics _metrics = metrics ?? NullGameMetrics.Instance;
 
-    public RoomCommandResult CreateRoom(string connectionId, string? displayName = null)
+    public RoomCommandResult CreateRoom(
+        string connectionId,
+        string? displayName = null,
+        AuthenticatedPlayerIdentity? authenticatedPlayer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
 
@@ -109,7 +119,7 @@ public sealed class GameRoomCoordinator(
             }
 
             var roomId = CreateUniqueRoomId();
-            var player = CreatePlayer(seat: 1, connectionId, displayName);
+            var player = CreatePlayer(seat: 1, connectionId, displayName, authenticatedPlayer);
             var room = new RoomRecord(roomId, RoomStatusDto.WaitingForPlayers);
             room.Players.Add(player);
 
@@ -125,7 +135,11 @@ public sealed class GameRoomCoordinator(
         }
     }
 
-    public RoomCommandResult JoinRoom(string connectionId, string roomId, string? displayName = null)
+    public RoomCommandResult JoinRoom(
+        string connectionId,
+        string roomId,
+        string? displayName = null,
+        AuthenticatedPlayerIdentity? authenticatedPlayer = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
 
@@ -168,7 +182,7 @@ public sealed class GameRoomCoordinator(
                     room.Id);
             }
 
-            var player = CreatePlayer(seat.Value, connectionId, displayName);
+            var player = CreatePlayer(seat.Value, connectionId, displayName, authenticatedPlayer);
             room.Players.Add(player);
             room.Status = room.Players.Count == MaxPlayersPerRoom
                 ? RoomStatusDto.ReadyCheck
@@ -868,6 +882,7 @@ public sealed class GameRoomCoordinator(
 
         return new MatchParticipantSummary(
             player.TemporaryUserId,
+            player.UserId,
             player.PlayerId,
             player.DisplayName,
             player.Seat,
@@ -957,14 +972,19 @@ public sealed class GameRoomCoordinator(
             _ => DirectionDto.Right
         };
 
-    private PlayerRecord CreatePlayer(int seat, string connectionId, string? displayName) =>
+    private PlayerRecord CreatePlayer(
+        int seat,
+        string connectionId,
+        string? displayName,
+        AuthenticatedPlayerIdentity? authenticatedPlayer) =>
         new(
             identityProvider.CreatePlayerId(),
             identityProvider.CreateTemporaryUserId(),
+            authenticatedPlayer?.UserId,
             seat,
             identityProvider.CreatePlayerSessionToken(),
             connectionId,
-            NormalizeDisplayName(displayName));
+            authenticatedPlayer?.Username ?? NormalizeDisplayName(displayName));
 
     private string CreateUniqueRoomId()
     {
@@ -1158,6 +1178,7 @@ public sealed class GameRoomCoordinator(
     private sealed class PlayerRecord(
         string playerId,
         Guid temporaryUserId,
+        Guid? userId,
         int seat,
         string sessionToken,
         string connectionId,
@@ -1166,6 +1187,8 @@ public sealed class GameRoomCoordinator(
         public string PlayerId { get; } = playerId;
 
         public Guid TemporaryUserId { get; } = temporaryUserId;
+
+        public Guid? UserId { get; } = userId;
 
         public int Seat { get; } = seat;
 

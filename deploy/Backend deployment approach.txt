@@ -569,6 +569,8 @@ PROD_DEPLOY_PATH
 PROD_BACKEND_DOMAIN
 PROD_FRONTEND_ORIGIN
 PROD_POSTGRES_PASSWORD
+PROD_GOOGLE_CLIENT_ID
+PROD_GOOGLE_CLIENT_SECRET
 GRAFANA_OTLP_ENDPOINT
 GRAFANA_OTLP_HEADERS
 ```
@@ -590,6 +592,8 @@ Optional secrets:
 PROD_FRONTEND_WWW_ORIGIN=https://www.snakefortwo.com
 PROD_POSTGRES_DB=snakefortwo
 PROD_POSTGRES_USER=snakefortwo
+PROD_AUTH_SUCCESS_REDIRECT_URI=https://snakefortwo.com
+PROD_AUTH_LOGOUT_REDIRECT_URI=https://snakefortwo.com
 ```
 
 If the optional database name/user secrets are omitted, the workflow writes:
@@ -601,3 +605,18 @@ POSTGRES_USER=snakefortwo
 
 `PROD_POSTGRES_PASSWORD` must be a strong unique password. Do not use the local
 development default on the VPS.
+
+For Google sign-in, create a Google OAuth Web application client and add these
+authorized redirect URIs before deploying accounts:
+
+```text
+https://api.snakefortwo.com/signin-google
+http://localhost:8080/signin-google
+http://localhost:5012/signin-google
+https://localhost:7198/signin-google
+```
+
+The production client id and secret are written by GitHub Actions as
+`GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` in `/opt/snakefortwo/.env`.
+The backend stores users and provider links in PostgreSQL, while ASP.NET Core
+cookie authentication handles browser sessions.

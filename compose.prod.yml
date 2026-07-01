@@ -12,6 +12,11 @@ services:
       Persistence__Enabled: ${PERSISTENCE_ENABLED:-true}
       Persistence__ApplyMigrationsOnStartup: ${APPLY_MIGRATIONS_ON_STARTUP:-true}
       ConnectionStrings__SnakeForTwo: Host=postgres;Port=5432;Database=${POSTGRES_DB:-snakefortwo};Username=${POSTGRES_USER:-snakefortwo};Password=${POSTGRES_PASSWORD:-snakefortwo_dev_password}
+      Authentication__Google__ClientId: ${GOOGLE_CLIENT_ID:-}
+      Authentication__Google__ClientSecret: ${GOOGLE_CLIENT_SECRET:-}
+      Auth__SuccessRedirectUri: ${AUTH_SUCCESS_REDIRECT_URI:-https://snakefortwo.com}
+      Auth__LogoutRedirectUri: ${AUTH_LOGOUT_REDIRECT_URI:-https://snakefortwo.com}
+      Auth__DataProtectionKeysPath: /var/lib/snakefortwo/data-protection-keys
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-SnakeForTwo.Api}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=production,service.namespace=snakefortwo}
       OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
@@ -28,6 +33,8 @@ services:
       Cors__AllowedOrigins__1: ${FRONTEND_WWW_ORIGIN:-https://www.snakefortwo.com}
     expose:
       - "8080"
+    volumes:
+      - auth_data:/var/lib/snakefortwo/data-protection-keys
     depends_on:
       postgres:
         condition: service_healthy
@@ -75,5 +82,6 @@ services:
 
 volumes:
   postgres_data:
+  auth_data:
   caddy_data:
   caddy_config:

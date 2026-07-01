@@ -51,6 +51,7 @@ public sealed record MatchSummary(
 
 public sealed record MatchParticipantSummary(
     Guid TemporaryUserId,
+    Guid? UserId,
     string PlayerId,
     string? DisplayName,
     int Seat,
@@ -79,6 +80,7 @@ public sealed record LeaderboardEntry(
     string Mode,
     DateTimeOffset FinishedAt,
     Guid TemporaryUserId,
+    Guid? UserId,
     string PlayerId,
     string? DisplayName,
     int Seat,

@@ -6,6 +6,7 @@ export interface LeaderboardEntry {
   mode: string;
   finishedAt: string;
   temporaryUserId: string;
+  userId: string | null;
   playerId: string;
   displayName: string | null;
   seat: number;

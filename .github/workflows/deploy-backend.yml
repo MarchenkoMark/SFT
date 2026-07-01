@@ -78,9 +78,13 @@ jobs:
           POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          AUTH_SUCCESS_REDIRECT_URI: ${{ secrets.PROD_AUTH_SUCCESS_REDIRECT_URI }}
+          AUTH_LOGOUT_REDIRECT_URI: ${{ secrets.PROD_AUTH_LOGOUT_REDIRECT_URI }}
         run: |
-          if [ -z "${BACKEND_DOMAIN}" ] || [ -z "${FRONTEND_ORIGIN}" ] || [ -z "${POSTGRES_PASSWORD}" ]; then
-            echo "::error::Add PROD_BACKEND_DOMAIN, PROD_FRONTEND_ORIGIN, and PROD_POSTGRES_PASSWORD repository secrets before deploying."
+          if [ -z "${BACKEND_DOMAIN}" ] || [ -z "${FRONTEND_ORIGIN}" ] || [ -z "${POSTGRES_PASSWORD}" ] || [ -z "${GOOGLE_CLIENT_ID}" ] || [ -z "${GOOGLE_CLIENT_SECRET}" ]; then
+            echo "::error::Add PROD_BACKEND_DOMAIN, PROD_FRONTEND_ORIGIN, PROD_POSTGRES_PASSWORD, PROD_GOOGLE_CLIENT_ID, and PROD_GOOGLE_CLIENT_SECRET repository secrets before deploying."
             exit 1
           fi
 
@@ -96,6 +100,10 @@ jobs:
             printf 'POSTGRES_DB=%s\n' "${POSTGRES_DB:-snakefortwo}"
             printf 'POSTGRES_USER=%s\n' "${POSTGRES_USER:-snakefortwo}"
             printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+            printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
+            printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET"
+            printf 'AUTH_SUCCESS_REDIRECT_URI=%s\n' "${AUTH_SUCCESS_REDIRECT_URI:-$FRONTEND_ORIGIN}"
+            printf 'AUTH_LOGOUT_REDIRECT_URI=%s\n' "${AUTH_LOGOUT_REDIRECT_URI:-$FRONTEND_ORIGIN}"
           } > "$app_env"
           chmod 600 "$app_env"
 
@@ -109,7 +117,7 @@ jobs:
           set -eu
           touch .env
           tmp_env=".env.app.$$"
-          awk '!/^(BACKEND_DOMAIN|FRONTEND_ORIGIN|FRONTEND_WWW_ORIGIN|PERSISTENCE_ENABLED|APPLY_MIGRATIONS_ON_STARTUP|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD)=/' .env > "$tmp_env"
+          awk '!/^(BACKEND_DOMAIN|FRONTEND_ORIGIN|FRONTEND_WWW_ORIGIN|PERSISTENCE_ENABLED|APPLY_MIGRATIONS_ON_STARTUP|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD|GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|AUTH_SUCCESS_REDIRECT_URI|AUTH_LOGOUT_REDIRECT_URI)=/' .env > "$tmp_env"
           printf '\n' >> "$tmp_env"
           cat .app.env >> "$tmp_env"
           mv "$tmp_env" .env

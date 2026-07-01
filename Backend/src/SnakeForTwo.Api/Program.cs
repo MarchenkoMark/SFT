@@ -1,4 +1,5 @@
 using System.Reflection;
+using Microsoft.EntityFrameworkCore;
 using OpenTelemetry.Logs;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
@@ -6,6 +7,7 @@ using OpenTelemetry.Trace;
 using SnakeForTwo.Api;
 using SnakeForTwo.Game.Application;
 using SnakeForTwo.Infrastructure;
+using SnakeForTwo.Infrastructure.Persistence;
 
 const string ServiceName = "SnakeForTwo.Api";
 const string ServiceNamespace = "snakefortwo";
@@ -23,6 +25,18 @@ var otlpEndpointConfigured = !string.IsNullOrWhiteSpace(
 var allowedCorsOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
     .Get<string[]>() ?? [];
+var persistenceOptions = builder.Configuration
+    .GetSection(PersistenceOptions.SectionName)
+    .Get<PersistenceOptions>() ?? new PersistenceOptions();
+var persistenceConnectionString = builder.Configuration.GetConnectionString("SnakeForTwo");
+var persistenceEnabled = persistenceOptions.Enabled ||
+    !string.IsNullOrWhiteSpace(persistenceConnectionString);
+
+if (persistenceEnabled && string.IsNullOrWhiteSpace(persistenceConnectionString))
+{
+    throw new InvalidOperationException(
+        "Persistence is enabled but ConnectionStrings:SnakeForTwo is not configured.");
+}
 
 builder.Services.AddOpenTelemetry()
     .ConfigureResource(resource => resource
@@ -95,9 +109,30 @@ builder.Services.Configure<GameRuntimeOptions>(
     builder.Configuration.GetSection(GameRuntimeOptions.SectionName));
 builder.Services.Configure<WebSocketRateLimitOptions>(
     builder.Configuration.GetSection(WebSocketRateLimitOptions.SectionName));
+builder.Services.Configure<PersistenceOptions>(
+    builder.Configuration.GetSection(PersistenceOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRoomIdentityProvider, SecureRoomIdentityProvider>();
-builder.Services.AddSingleton<IGameEventPublisher, InMemoryGameEventPublisher>();
+if (persistenceEnabled)
+{
+    builder.Services.AddDbContext<SnakeForTwoDbContext>(options =>
+        options.UseNpgsql(persistenceConnectionString));
+    builder.Services.AddScoped<PostgresMatchSummaryStore>();
+    builder.Services.AddScoped<IMatchSummaryWriter>(serviceProvider =>
+        serviceProvider.GetRequiredService<PostgresMatchSummaryStore>());
+    builder.Services.AddScoped<IMatchSummaryQuery>(serviceProvider =>
+        serviceProvider.GetRequiredService<PostgresMatchSummaryStore>());
+    builder.Services.AddScoped<ILeaderboardQuery>(serviceProvider =>
+        serviceProvider.GetRequiredService<PostgresMatchSummaryStore>());
+    builder.Services.AddSingleton<BackgroundGameEventPublisher>();
+    builder.Services.AddSingleton<IGameEventPublisher>(serviceProvider =>
+        serviceProvider.GetRequiredService<BackgroundGameEventPublisher>());
+    builder.Services.AddHostedService<GameEventPersistenceHostedService>();
+}
+else
+{
+    builder.Services.AddSingleton<IGameEventPublisher, InMemoryGameEventPublisher>();
+}
 builder.Services.AddSingleton<IGameMetrics, GameMetrics>();
 builder.Services.AddSingleton<IRoomCoordinator>(serviceProvider =>
 {
@@ -116,6 +151,15 @@ builder.Services.AddSingleton<WebSocketEndpoint>();
 builder.Services.AddHostedService<RoomTimerHostedService>();
 
 var app = builder.Build();
+
+if (persistenceEnabled && persistenceOptions.ApplyMigrationsOnStartup)
+{
+    using var scope = app.Services.CreateScope();
+    await scope.ServiceProvider
+        .GetRequiredService<SnakeForTwoDbContext>()
+        .Database
+        .MigrateAsync();
+}
 
 app.UseCors("Frontend");
 app.UseWebSockets();
@@ -153,6 +197,8 @@ app.MapGet("/ping", () => Results.Ok(new
     message = "pong",
     time = TimeProvider.System.GetUtcNow()
 }));
+
+app.MapPersistenceEndpoints(persistenceEnabled);
 
 app.Map("/ws", async context =>
     await context.RequestServices

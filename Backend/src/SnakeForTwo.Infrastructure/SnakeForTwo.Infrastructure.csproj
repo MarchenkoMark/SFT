@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.0" />
     <ProjectReference Include="..\SnakeForTwo.Game.Application\SnakeForTwo.Game.Application.csproj" />
     <ProjectReference Include="..\SnakeForTwo.Contracts\SnakeForTwo.Contracts.csproj" />
   </ItemGroup>

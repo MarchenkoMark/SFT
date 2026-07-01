@@ -70,6 +70,53 @@ jobs:
               && grep -n 'WithTracing' Backend/src/SnakeForTwo.Api/Program.cs \
               && grep -n 'OpenTelemetry.Exporter.OpenTelemetryProtocol' Backend/src/SnakeForTwo.Api/SnakeForTwo.Api.csproj"
 
+      - name: Configure production application environment
+        env:
+          BACKEND_DOMAIN: ${{ secrets.PROD_BACKEND_DOMAIN }}
+          FRONTEND_ORIGIN: ${{ secrets.PROD_FRONTEND_ORIGIN }}
+          FRONTEND_WWW_ORIGIN: ${{ secrets.PROD_FRONTEND_WWW_ORIGIN }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+        run: |
+          if [ -z "${BACKEND_DOMAIN}" ] || [ -z "${FRONTEND_ORIGIN}" ] || [ -z "${POSTGRES_PASSWORD}" ]; then
+            echo "::error::Add PROD_BACKEND_DOMAIN, PROD_FRONTEND_ORIGIN, and PROD_POSTGRES_PASSWORD repository secrets before deploying."
+            exit 1
+          fi
+
+          app_env="$(mktemp)"
+          trap 'rm -f "$app_env"' EXIT
+
+          {
+            printf 'BACKEND_DOMAIN=%s\n' "$BACKEND_DOMAIN"
+            printf 'FRONTEND_ORIGIN=%s\n' "$FRONTEND_ORIGIN"
+            printf 'FRONTEND_WWW_ORIGIN=%s\n' "${FRONTEND_WWW_ORIGIN:-https://www.snakefortwo.com}"
+            printf 'PERSISTENCE_ENABLED=true\n'
+            printf 'APPLY_MIGRATIONS_ON_STARTUP=true\n'
+            printf 'POSTGRES_DB=%s\n' "${POSTGRES_DB:-snakefortwo}"
+            printf 'POSTGRES_USER=%s\n' "${POSTGRES_USER:-snakefortwo}"
+            printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+          } > "$app_env"
+          chmod 600 "$app_env"
+
+          scp -i ~/.ssh/deploy_key -P "${{ secrets.PROD_SSH_PORT }}" \
+            "$app_env" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/.app.env"
+
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' && sh -s" <<'REMOTE_SCRIPT'
+          set -eu
+          touch .env
+          tmp_env=".env.app.$$"
+          awk '!/^(BACKEND_DOMAIN|FRONTEND_ORIGIN|FRONTEND_WWW_ORIGIN|PERSISTENCE_ENABLED|APPLY_MIGRATIONS_ON_STARTUP|POSTGRES_DB|POSTGRES_USER|POSTGRES_PASSWORD)=/' .env > "$tmp_env"
+          printf '\n' >> "$tmp_env"
+          cat .app.env >> "$tmp_env"
+          mv "$tmp_env" .env
+          chmod 600 .env
+          rm -f .app.env
+          REMOTE_SCRIPT
+
       - name: Configure production telemetry environment
         env:
           GRAFANA_OTLP_ENDPOINT: ${{ secrets.GRAFANA_OTLP_ENDPOINT }}

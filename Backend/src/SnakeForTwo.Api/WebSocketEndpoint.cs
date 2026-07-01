@@ -252,7 +252,11 @@ internal sealed class WebSocketEndpoint
             switch (type)
             {
                 case "createRoom":
-                    result = _roomCoordinator.CreateRoom(connectionId);
+                    result = _roomCoordinator.CreateRoom(
+                        connectionId,
+                        TryGetOptionalString(document.RootElement, "displayName", out var createDisplayName)
+                            ? createDisplayName
+                            : null);
                     break;
 
                 case "joinRoom":
@@ -261,7 +265,12 @@ internal sealed class WebSocketEndpoint
                         return await SendMalformedAsync(connectionId, "joinRoom requires roomId.");
                     }
 
-                    result = _roomCoordinator.JoinRoom(connectionId, joinRoomId);
+                    result = _roomCoordinator.JoinRoom(
+                        connectionId,
+                        joinRoomId,
+                        TryGetOptionalString(document.RootElement, "displayName", out var joinDisplayName)
+                            ? joinDisplayName
+                            : null);
                     break;
 
                 case "resumeRoom":
@@ -422,6 +431,24 @@ internal sealed class WebSocketEndpoint
         }
 
         value = property.GetString() ?? "";
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static bool TryGetOptionalString(JsonElement root, string propertyName, out string? value)
+    {
+        value = null;
+        if (!root.TryGetProperty(propertyName, out var property) ||
+            property.ValueKind == JsonValueKind.Null)
+        {
+            return false;
+        }
+
+        if (property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString();
         return !string.IsNullOrWhiteSpace(value);
     }
 

@@ -9,6 +9,9 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
       DOTNET_EnableDiagnostics: "1"
+      Persistence__Enabled: ${PERSISTENCE_ENABLED:-true}
+      Persistence__ApplyMigrationsOnStartup: ${APPLY_MIGRATIONS_ON_STARTUP:-true}
+      ConnectionStrings__SnakeForTwo: Host=postgres;Port=5432;Database=${POSTGRES_DB:-snakefortwo};Username=${POSTGRES_USER:-snakefortwo};Password=${POSTGRES_PASSWORD:-snakefortwo_dev_password}
       OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-SnakeForTwo.Api}
       OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=production,service.namespace=snakefortwo}
       OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
@@ -25,12 +28,33 @@ services:
       Cors__AllowedOrigins__1: ${FRONTEND_WWW_ORIGIN:-https://www.snakefortwo.com}
     expose:
       - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-snakefortwo}
+      POSTGRES_USER: ${POSTGRES_USER:-snakefortwo}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-snakefortwo_dev_password}
+    expose:
+      - "5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   caddy:
     image: caddy:2-alpine
@@ -50,5 +74,6 @@ services:
       - caddy_config:/config
 
 volumes:
+  postgres_data:
   caddy_data:
   caddy_config:

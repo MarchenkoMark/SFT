@@ -8,6 +8,12 @@ namespace SnakeForTwo.Api;
 internal sealed class WebSocketConnectionRegistry
 {
     private readonly ConcurrentDictionary<string, WebSocketClientConnection> _connections = new(StringComparer.Ordinal);
+    private readonly IGameEventPublisher _gameEventPublisher;
+
+    public WebSocketConnectionRegistry(IGameEventPublisher gameEventPublisher)
+    {
+        _gameEventPublisher = gameEventPublisher;
+    }
 
     public WebSocketClientConnection Register(WebSocket socket)
     {
@@ -51,6 +57,11 @@ internal sealed class WebSocketConnectionRegistry
                 WebSocketCloseStatus.PolicyViolation,
                 closure.Reason,
                 cancellationToken);
+        }
+
+        foreach (var gameEvent in result.Events)
+        {
+            await _gameEventPublisher.PublishAsync(gameEvent, cancellationToken);
         }
     }
 

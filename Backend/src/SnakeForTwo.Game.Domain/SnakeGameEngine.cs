@@ -3,6 +3,10 @@ using System.Text;
 
 namespace SnakeForTwo.Game.Domain;
 
+public sealed record GameAdvanceResult(
+    GameState State,
+    IReadOnlyList<FoodEatenEvent> FoodEaten);
+
 public static class SnakeGameEngine
 {
     public static GameState CreateInitialState(
@@ -52,21 +56,31 @@ public static class SnakeGameEngine
     }
 
     public static GameState Advance(GameState state, TickInputs inputs) =>
-        Advance(state, inputs, state.Rules);
+        AdvanceDetailed(state, inputs, state.Rules).State;
 
     public static GameState Advance(GameState state, TickInputs inputs, GameRules rules)
+    {
+        return AdvanceDetailed(state, inputs, rules).State;
+    }
+
+    public static GameAdvanceResult AdvanceDetailed(GameState state, TickInputs inputs) =>
+        AdvanceDetailed(state, inputs, state.Rules);
+
+    public static GameAdvanceResult AdvanceDetailed(GameState state, TickInputs inputs, GameRules rules)
     {
         ArgumentNullException.ThrowIfNull(state);
         ArgumentNullException.ThrowIfNull(inputs);
 
         if (state.Status != GameStatus.Running)
         {
-            return state.Copy();
+            return new GameAdvanceResult(state.Copy(), Array.Empty<FoodEatenEvent>());
         }
 
         var plannedSnakes = new List<Snake>(state.Snakes.Count);
         var eatenFood = new List<FoodItem>();
+        var foodEatenEvents = new List<FoodEatenEvent>();
         GameOverReason? finishReason = null;
+        var nextTick = state.Tick.Next();
 
         foreach (var snake in state.Snakes)
         {
@@ -117,6 +131,8 @@ public static class SnakeGameEngine
 
             plannedSnakes.Add(snake.With(nextDirection, nextBody));
             eatenFood.AddRange(foodAtHead);
+            foodEatenEvents.AddRange(foodAtHead.Select(food =>
+                new FoodEatenEvent(nextTick, snake.PlayerId, food.OwnerPlayerId, food.Cell)));
         }
 
         finishReason ??= DetectCollision(plannedSnakes);
@@ -140,14 +156,16 @@ public static class SnakeGameEngine
             }
         }
 
-        return new GameState(
-            state.Tick.Next(),
-            rules,
-            finishReason is null ? GameStatus.Running : GameStatus.Finished,
-            plannedSnakes,
-            nextFood,
-            finishReason ?? GameOverReason.None,
-            nextCursor);
+        return new GameAdvanceResult(
+            new GameState(
+                nextTick,
+                rules,
+                finishReason is null ? GameStatus.Running : GameStatus.Finished,
+                plannedSnakes,
+                nextFood,
+                finishReason ?? GameOverReason.None,
+                nextCursor),
+            foodEatenEvents);
     }
 
     public static string ComputeStateHash(GameState state)

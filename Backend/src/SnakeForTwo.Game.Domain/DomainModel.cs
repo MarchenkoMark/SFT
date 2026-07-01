@@ -163,6 +163,12 @@ public sealed class Snake
 
 public sealed record FoodItem(PlayerId OwnerPlayerId, SnakeColor Color, Cell Cell);
 
+public sealed record FoodEatenEvent(
+    GameTick Tick,
+    PlayerId EaterPlayerId,
+    PlayerId OwnerPlayerId,
+    Cell Cell);
+
 public sealed class GameState
 {
     public GameState(

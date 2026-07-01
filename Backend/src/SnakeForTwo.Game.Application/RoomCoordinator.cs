@@ -10,6 +10,8 @@ public interface IRoomIdentityProvider
 
     string CreatePlayerId();
 
+    Guid CreateTemporaryUserId();
+
     string CreatePlayerSessionToken();
 
     string CreateMatchId();
@@ -19,9 +21,9 @@ public interface IRoomIdentityProvider
 
 public interface IRoomCoordinator
 {
-    RoomCommandResult CreateRoom(string connectionId);
+    RoomCommandResult CreateRoom(string connectionId, string? displayName = null);
 
-    RoomCommandResult JoinRoom(string connectionId, string roomId);
+    RoomCommandResult JoinRoom(string connectionId, string roomId, string? displayName = null);
 
     RoomCommandResult ResumeRoom(string connectionId, string roomId, string playerSessionToken);
 
@@ -46,14 +48,24 @@ public sealed record ConnectionClosure(string ConnectionId, string Reason);
 
 public sealed record RoomCommandResult(
     IReadOnlyList<OutboundServerMessage> Messages,
-    IReadOnlyList<ConnectionClosure> ConnectionsToClose)
+    IReadOnlyList<ConnectionClosure> ConnectionsToClose,
+    IReadOnlyList<GameEvent> Events)
 {
+    public RoomCommandResult(
+        IReadOnlyList<OutboundServerMessage> Messages,
+        IReadOnlyList<ConnectionClosure> ConnectionsToClose)
+        : this(Messages, ConnectionsToClose, Array.Empty<GameEvent>())
+    {
+    }
+
     public static RoomCommandResult Empty { get; } = new(
         Array.Empty<OutboundServerMessage>(),
-        Array.Empty<ConnectionClosure>());
+        Array.Empty<ConnectionClosure>(),
+        Array.Empty<GameEvent>());
 
     public static RoomCommandResult ToConnection(string connectionId, ServerMessage message) =>
         new([new OutboundServerMessage([connectionId], message)],
+            [],
             []);
 
     public static RoomCommandResult Error(
@@ -82,7 +94,7 @@ public sealed class GameRoomCoordinator(
         lifecycleLogger ?? NullRoomLifecycleLogger.Instance;
     private readonly IGameMetrics _metrics = metrics ?? NullGameMetrics.Instance;
 
-    public RoomCommandResult CreateRoom(string connectionId)
+    public RoomCommandResult CreateRoom(string connectionId, string? displayName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
 
@@ -97,7 +109,7 @@ public sealed class GameRoomCoordinator(
             }
 
             var roomId = CreateUniqueRoomId();
-            var player = CreatePlayer(seat: 1, connectionId);
+            var player = CreatePlayer(seat: 1, connectionId, displayName);
             var room = new RoomRecord(roomId, RoomStatusDto.WaitingForPlayers);
             room.Players.Add(player);
 
@@ -113,7 +125,7 @@ public sealed class GameRoomCoordinator(
         }
     }
 
-    public RoomCommandResult JoinRoom(string connectionId, string roomId)
+    public RoomCommandResult JoinRoom(string connectionId, string roomId, string? displayName = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(connectionId);
 
@@ -156,7 +168,7 @@ public sealed class GameRoomCoordinator(
                     room.Id);
             }
 
-            var player = CreatePlayer(seat.Value, connectionId);
+            var player = CreatePlayer(seat.Value, connectionId, displayName);
             room.Players.Add(player);
             room.Status = room.Players.Count == MaxPlayersPerRoom
                 ? RoomStatusDto.ReadyCheck
@@ -341,6 +353,7 @@ public sealed class GameRoomCoordinator(
             RecordInputSchedulingMetrics(room.Match.Session, inputResult);
 
             var messages = new List<OutboundServerMessage>();
+            var events = new List<GameEvent>();
             if (inputResult is
                 {
                     Status: InputSchedulingStatus.Scheduled,
@@ -365,10 +378,15 @@ public sealed class GameRoomCoordinator(
 
             if (room.Match.Session.CurrentState.Status == GameStatus.Finished)
             {
-                FinishGameLocked(room, "teamLost", room.Match.Session.CurrentState.GameOverReason.ToString(), messages);
+                FinishGameLocked(
+                    room,
+                    "teamLost",
+                    room.Match.Session.CurrentState.GameOverReason.ToString(),
+                    messages,
+                    events);
             }
 
-            return Result(messages);
+            return Result(messages, events);
         }
     }
 
@@ -384,9 +402,10 @@ public sealed class GameRoomCoordinator(
             }
 
             var messages = new List<OutboundServerMessage>();
+            var events = new List<GameEvent>();
             if (room.Status is RoomStatusDto.Starting or RoomStatusDto.InGame)
             {
-                FinishGameLocked(room, "forfeit", "playerLeft", messages);
+                FinishGameLocked(room, "forfeit", "playerLeft", messages, events);
             }
 
             _lifecycleLogger.RoomLeft(room.Id, player.PlayerId, player.ConnectionId, "explicitLeave");
@@ -395,14 +414,14 @@ public sealed class GameRoomCoordinator(
             {
                 _rooms.Remove(room.Id);
                 ObserveRoomInventoryLocked();
-                return Result(messages);
+                return Result(messages, events);
             }
 
             NormalizeRoomStatusAfterRosterChange(room);
             ObserveRoomInventoryLocked();
             messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
 
-            return Result(messages);
+            return Result(messages, events);
         }
     }
 
@@ -459,8 +478,9 @@ public sealed class GameRoomCoordinator(
             }
 
             var messages = new List<OutboundServerMessage>();
-            FinishGameLocked(room, result, reason, messages);
-            return Result(messages);
+            var events = new List<GameEvent>();
+            FinishGameLocked(room, result, reason, messages, events);
+            return Result(messages, events);
         }
     }
 
@@ -470,6 +490,7 @@ public sealed class GameRoomCoordinator(
         {
             var now = _timeProvider.GetUtcNow();
             var messages = new List<OutboundServerMessage>();
+            var events = new List<GameEvent>();
 
             foreach (var room in _rooms.Values.ToArray())
             {
@@ -519,7 +540,8 @@ public sealed class GameRoomCoordinator(
                             room,
                             "teamLost",
                             room.Match.Session.CurrentState.GameOverReason.ToString(),
-                            messages);
+                            messages,
+                            events);
                     }
                 }
 
@@ -527,14 +549,14 @@ public sealed class GameRoomCoordinator(
                     room.Players.Any(player => player.DisconnectedAt is not null &&
                         player.DisconnectedAt.Value + TimeSpan.FromSeconds(options.DisconnectGracePeriodSeconds) <= now))
                 {
-                    FinishGameLocked(room, "forfeit", "disconnectTimeout", messages);
+                    FinishGameLocked(room, "forfeit", "disconnectTimeout", messages, events);
                 }
 
                 RemoveExpiredDisconnectedPlayersLocked(room, now, messages);
             }
 
             ObserveRoomInventoryLocked();
-            return Result(messages);
+            return Result(messages, events);
         }
     }
 
@@ -569,7 +591,8 @@ public sealed class GameRoomCoordinator(
         RoomRecord room,
         string result,
         string reason,
-        List<OutboundServerMessage> messages)
+        List<OutboundServerMessage> messages,
+        List<GameEvent> events)
     {
         var match = room.Match;
         if (match is null)
@@ -587,6 +610,13 @@ public sealed class GameRoomCoordinator(
         if (wasGameActive)
         {
             _lifecycleLogger.GameEnded(room.Id, match.MatchId, result, reason);
+            if (match.Session is not null)
+            {
+                var occurredAt = _timeProvider.GetUtcNow();
+                events.Add(new MatchFinishedEvent(
+                    BuildMatchSummary(room, match, result, reason, occurredAt),
+                    occurredAt));
+            }
         }
         ObserveRoomInventoryLocked();
 
@@ -779,7 +809,105 @@ public sealed class GameRoomCoordinator(
         new(
             session.CurrentTick,
             session.CurrentState.Copy(),
-            SnakeGameEngine.ComputeStateHash(session.CurrentState));
+            SnakeGameEngine.ComputeStateHash(session.CurrentState),
+            Array.Empty<FoodEatenEvent>());
+
+    private MatchSummary BuildMatchSummary(
+        RoomRecord room,
+        MatchRecord match,
+        string result,
+        string reason,
+        DateTimeOffset finishedAt)
+    {
+        var session = match.Session ?? throw new InvalidOperationException("A finished match requires a game session.");
+        var finalState = session.CurrentState;
+        var durationTicks = finalState.Tick.Value;
+        var participants = room.Players
+            .OrderBy(player => player.Seat)
+            .Select(player => BuildParticipantSummary(
+                player,
+                finalState,
+                session.FoodEatenEvents,
+                room.Players.Count,
+                durationTicks))
+            .ToArray();
+
+        return new MatchSummary(
+            match.MatchId,
+            room.Id,
+            ModeForPlayerCount(room.Players.Count),
+            match.StartServerTime,
+            finishedAt,
+            durationTicks,
+            (long)Math.Round(options.TickDuration.TotalMilliseconds * durationTicks),
+            result,
+            reason,
+            participants.Length,
+            finalState.Rules.BoardWidth,
+            finalState.Rules.BoardHeight,
+            match.Seed,
+            SnakeGameEngine.ComputeStateHash(finalState),
+            participants);
+    }
+
+    private static MatchParticipantSummary BuildParticipantSummary(
+        PlayerRecord player,
+        GameState finalState,
+        IReadOnlyList<FoodEatenEvent> foodEatenEvents,
+        int playerCount,
+        long durationTicks)
+    {
+        var playerId = new PlayerId(player.PlayerId);
+        var finalSnake = finalState.Snakes.FirstOrDefault(snake => snake.PlayerId == playerId);
+        var ownFoodEaten = foodEatenEvents.Count(food =>
+            food.EaterPlayerId == playerId && food.OwnerPlayerId == playerId);
+        var teammateFoodEaten = foodEatenEvents.Count(food =>
+            food.EaterPlayerId == playerId && food.OwnerPlayerId != playerId);
+        var foodEatenByTeammates = foodEatenEvents.Count(food =>
+            food.EaterPlayerId != playerId && food.OwnerPlayerId == playerId);
+
+        return new MatchParticipantSummary(
+            player.TemporaryUserId,
+            player.PlayerId,
+            player.DisplayName,
+            player.Seat,
+            finalSnake?.Alive ?? false,
+            finalSnake?.Body.Count ?? 0,
+            ownFoodEaten,
+            teammateFoodEaten,
+            foodEatenByTeammates,
+            CalculateScore(
+                durationTicks,
+                ownFoodEaten,
+                teammateFoodEaten,
+                foodEatenByTeammates,
+                playerCount));
+    }
+
+    private static long CalculateScore(
+        long durationTicks,
+        int ownFoodEaten,
+        int teammateFoodEaten,
+        int foodEatenByTeammates,
+        int playerCount)
+    {
+        var baseScore = durationTicks
+            + (ownFoodEaten * 50L)
+            - (teammateFoodEaten * 30L)
+            + (foodEatenByTeammates * 30L);
+        var playerCountBonus = playerCount switch
+        {
+            <= 2 => 1.0,
+            3 => 1.15,
+            4 => 1.3,
+            _ => 1.5
+        };
+
+        return Math.Max(0, (long)Math.Round(baseScore * playerCountBonus, MidpointRounding.AwayFromZero));
+    }
+
+    private static string ModeForPlayerCount(int playerCount) =>
+        playerCount <= 2 ? "two-player-coop" : "party-coop";
 
     private static GameState WithOutgoingDirections(
         GameState state,
@@ -829,12 +957,14 @@ public sealed class GameRoomCoordinator(
             _ => DirectionDto.Right
         };
 
-    private PlayerRecord CreatePlayer(int seat, string connectionId) =>
+    private PlayerRecord CreatePlayer(int seat, string connectionId, string? displayName) =>
         new(
             identityProvider.CreatePlayerId(),
+            identityProvider.CreateTemporaryUserId(),
             seat,
             identityProvider.CreatePlayerSessionToken(),
-            connectionId);
+            connectionId,
+            NormalizeDisplayName(displayName));
 
     private string CreateUniqueRoomId()
     {
@@ -908,6 +1038,20 @@ public sealed class GameRoomCoordinator(
 
     private static string NormalizeRoomId(string? roomId) => roomId?.Trim() ?? "";
 
+    private static string? NormalizeDisplayName(string? displayName)
+    {
+        var normalized = displayName?.Trim();
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            return null;
+        }
+
+        const int maxDisplayNameLength = 40;
+        return normalized.Length <= maxDisplayNameLength
+            ? normalized
+            : normalized[..maxDisplayNameLength];
+    }
+
     private void RemovePlayerLocked(RoomRecord room, PlayerRecord player)
     {
         if (player.ConnectionId is not null)
@@ -948,7 +1092,10 @@ public sealed class GameRoomCoordinator(
                     player.PlayerId,
                     player.Seat,
                     player.IsConnected,
-                    player.IsReady))
+                    player.IsReady)
+                {
+                    DisplayName = player.DisplayName
+                })
                 .ToArray(),
             room.Match?.MatchId);
 
@@ -974,14 +1121,26 @@ public sealed class GameRoomCoordinator(
             message);
 
     private static RoomCommandResult Result(IEnumerable<OutboundServerMessage> messages) =>
-        new(messages.Where(message => message.ConnectionIds.Count > 0).ToArray(), Array.Empty<ConnectionClosure>());
+        new(
+            messages.Where(message => message.ConnectionIds.Count > 0).ToArray(),
+            Array.Empty<ConnectionClosure>(),
+            Array.Empty<GameEvent>());
+
+    private static RoomCommandResult Result(
+        IEnumerable<OutboundServerMessage> messages,
+        IEnumerable<GameEvent> events) =>
+        new(
+            messages.Where(message => message.ConnectionIds.Count > 0).ToArray(),
+            Array.Empty<ConnectionClosure>(),
+            events.ToArray());
 
     private static RoomCommandResult Result(
         IEnumerable<OutboundServerMessage> messages,
         IEnumerable<ConnectionClosure> closures) =>
         new(
             messages.Where(message => message.ConnectionIds.Count > 0).ToArray(),
-            closures.ToArray());
+            closures.ToArray(),
+            Array.Empty<GameEvent>());
 
     private sealed record PlayerLocation(string RoomId, string PlayerId);
 
@@ -996,13 +1155,23 @@ public sealed class GameRoomCoordinator(
         public MatchRecord? Match { get; set; }
     }
 
-    private sealed class PlayerRecord(string playerId, int seat, string sessionToken, string connectionId)
+    private sealed class PlayerRecord(
+        string playerId,
+        Guid temporaryUserId,
+        int seat,
+        string sessionToken,
+        string connectionId,
+        string? displayName)
     {
         public string PlayerId { get; } = playerId;
+
+        public Guid TemporaryUserId { get; } = temporaryUserId;
 
         public int Seat { get; } = seat;
 
         public string SessionToken { get; } = sessionToken;
+
+        public string? DisplayName { get; } = displayName;
 
         public string? ConnectionId { get; set; } = connectionId;
 

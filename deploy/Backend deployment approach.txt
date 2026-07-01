@@ -183,6 +183,13 @@ The `.env` file remains on the server and stores deployment-specific configurati
 
 ```env
 BACKEND_DOMAIN=api.snakefortwo.com
+FRONTEND_ORIGIN=https://snakefortwo.com
+FRONTEND_WWW_ORIGIN=https://www.snakefortwo.com
+PERSISTENCE_ENABLED=true
+APPLY_MIGRATIONS_ON_STARTUP=true
+POSTGRES_DB=snakefortwo
+POSTGRES_USER=snakefortwo
+POSTGRES_PASSWORD=<strong production password>
 ```
 
 This lets the same Compose and Caddy configuration be reused in different environments later, for example:
@@ -534,5 +541,63 @@ wss://api.snakefortwo.com
 * test a real WebSocket game connection from the browser;
 * introduce secrets through `.env` or a secrets manager once authentication, JWT keys, database credentials, or third-party API keys exist;
 * add database/Redis architecture when the game becomes stateful;
-* replace manual `rsync` deployment with GitHub Actions over SSH;
+* keep database backups/restore drills in place once leaderboards matter;
 * add monitoring, logs, alerts, and basic rate limiting before public launch.
+
+---
+
+## 14. GitHub Actions production secrets
+
+Backend deployments are now handled by:
+
+```text
+.github/workflows/deploy-backend.yml
+```
+
+The workflow syncs deployment files over SSH, writes server-specific values into
+`/opt/snakefortwo/.env`, validates Compose, and restarts the stack.
+
+Required repository or environment secrets:
+
+```text
+PROD_SSH_PRIVATE_KEY
+PROD_SSH_KNOWN_HOSTS
+PROD_SSH_HOST
+PROD_SSH_PORT
+PROD_SSH_USER
+PROD_DEPLOY_PATH
+PROD_BACKEND_DOMAIN
+PROD_FRONTEND_ORIGIN
+PROD_POSTGRES_PASSWORD
+GRAFANA_OTLP_ENDPOINT
+GRAFANA_OTLP_HEADERS
+```
+
+Recommended values for the current production deployment:
+
+```text
+PROD_SSH_HOST=134.209.20.89
+PROD_SSH_PORT=22
+PROD_SSH_USER=deploy
+PROD_DEPLOY_PATH=/opt/snakefortwo
+PROD_BACKEND_DOMAIN=api.snakefortwo.com
+PROD_FRONTEND_ORIGIN=https://snakefortwo.com
+```
+
+Optional secrets:
+
+```text
+PROD_FRONTEND_WWW_ORIGIN=https://www.snakefortwo.com
+PROD_POSTGRES_DB=snakefortwo
+PROD_POSTGRES_USER=snakefortwo
+```
+
+If the optional database name/user secrets are omitted, the workflow writes:
+
+```text
+POSTGRES_DB=snakefortwo
+POSTGRES_USER=snakefortwo
+```
+
+`PROD_POSTGRES_PASSWORD` must be a strong unique password. Do not use the local
+development default on the VPS.

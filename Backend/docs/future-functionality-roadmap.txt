@@ -79,68 +79,24 @@ Recommended first leaderboard:
   - Four-plus party co-op.
 - Separate time windows:
   - Daily.
-  - Weekly.
+  - Monthly.
   - All-time.
 - Score from server-authoritative match results only.
 - Do not accept score submissions from the client.
 
-Possible score formula:
+Leaderboard only mentions the player and his personal result, not the teams or their results.
 
+Possible score formula:
 score =
-  ticks_survived
+  ( ticks_survived
   + own_food_eaten * 50
-  + teammate_food_saved_or_assisted * 20
-  + player_count_bonus
-  + speed_multiplier
+  - teammate_food_eaten * 30
+  + food_eaten_by_teammate * 30)
+  * player_count_bonus
 
 Keep two-player and 3+ leaderboards separate at first. Comparing a 2-player
 room to a 5-player room will otherwise create balancing arguments before the
 game has enough data.
-
-Data model sketch:
-
-- users
-  - id
-  - display_name
-  - created_at
-  - last_seen_at
-
-- matches
-  - id
-  - room_id
-  - mode
-  - player_count
-  - board_width
-  - board_height
-  - tiles_per_second
-  - started_at
-  - finished_at
-  - result
-  - reason
-  - score
-  - final_tick
-  - state_hash
-
-- match_participants
-  - match_id
-  - player_id
-  - user_id nullable
-  - seat
-  - display_name_at_time
-  - connected_duration_ms
-
-- leaderboard_entries
-  - id
-  - match_id
-  - mode
-  - window_start
-  - window_kind
-  - score
-  - rank_snapshot optional
-
-For the first version, leaderboard entries can show a team name supplied by the
-host plus participant display names. User-specific career stats can be attached
-only for logged-in users.
 
 
 Paid Plan Options

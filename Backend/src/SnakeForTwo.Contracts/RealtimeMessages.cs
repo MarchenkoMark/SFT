@@ -21,7 +21,10 @@ public sealed record RoomPlayerDto(
     string PlayerId,
     int Seat,
     bool IsConnected,
-    bool IsReady);
+    bool IsReady)
+{
+    public string? DisplayName { get; init; }
+}
 
 public sealed record RoomStateDto(
     string RoomId,

@@ -175,6 +175,46 @@ public sealed class RoomCoordinatorTests
     }
 
     [Fact]
+    public void Finish_game_emits_match_summary_event_for_persistence()
+    {
+        var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
+        var coordinator = CreateCoordinator(
+            clock: clock,
+            options: new GameRuntimeOptions { StartCountdownSeconds = 0 });
+        var created = GetCreated(coordinator.CreateRoom("connection-1", displayName: "Ada"));
+        coordinator.JoinRoom("connection-2", created.RoomId, displayName: "Grace");
+        coordinator.SetReady("connection-1", created.RoomId, isReady: true);
+        coordinator.SetReady("connection-2", created.RoomId, isReady: true);
+        coordinator.ProcessTimers();
+
+        clock.Advance(TimeSpan.FromMilliseconds(500));
+        coordinator.ProcessTimers();
+
+        var result = coordinator.FinishGame(created.RoomId, "teamLost", "engineFinished");
+
+        var finished = Assert.IsType<MatchFinishedEvent>(Assert.Single(result.Events));
+        Assert.Equal("match-1", finished.MatchId);
+        Assert.Equal(created.RoomId, finished.Summary.RoomId);
+        Assert.Equal("two-player-coop", finished.Summary.Mode);
+        Assert.Equal(DateTimeOffset.UnixEpoch, finished.Summary.StartedAt);
+        Assert.Equal(DateTimeOffset.UnixEpoch.AddMilliseconds(500), finished.Summary.FinishedAt);
+        Assert.Equal(1, finished.Summary.DurationTicks);
+        Assert.Equal(500, finished.Summary.DurationMs);
+        Assert.Equal("teamLost", finished.Summary.Result);
+        Assert.Equal("engineFinished", finished.Summary.Reason);
+        Assert.Equal(2, finished.Summary.Participants.Count);
+
+        var first = finished.Summary.Participants.Single(participant => participant.Seat == 1);
+        Assert.Equal(Guid.Parse("00000000-0000-0000-0000-000000000001"), first.TemporaryUserId);
+        Assert.Equal("Ada", first.DisplayName);
+        Assert.Equal(1, first.Score);
+
+        var second = finished.Summary.Participants.Single(participant => participant.Seat == 2);
+        Assert.Equal(Guid.Parse("00000000-0000-0000-0000-000000000002"), second.TemporaryUserId);
+        Assert.Equal("Grace", second.DisplayName);
+    }
+
+    [Fact]
     public void Input_inside_grace_window_applies_to_current_tick()
     {
         var clock = new ManualTimeProvider(DateTimeOffset.UnixEpoch);
@@ -399,12 +439,16 @@ public sealed class RoomCoordinatorTests
     {
         private int _roomSequence;
         private int _playerSequence;
+        private int _temporaryUserSequence;
         private int _tokenSequence;
         private int _matchSequence;
 
         public string CreateRoomId() => $"ROOM{++_roomSequence}";
 
         public string CreatePlayerId() => $"player-{++_playerSequence}";
+
+        public Guid CreateTemporaryUserId() =>
+            Guid.Parse($"00000000-0000-0000-0000-{++_temporaryUserSequence:000000000000}");
 
         public string CreatePlayerSessionToken() => $"token-{++_tokenSequence}";
 

@@ -1,6 +1,10 @@
 namespace SnakeForTwo.Game.Domain;
 
-public sealed record GameFrame(GameTick Tick, GameState State, string StateHash);
+public sealed record GameFrame(
+    GameTick Tick,
+    GameState State,
+    string StateHash,
+    IReadOnlyList<FoodEatenEvent> FoodEaten);
 
 public sealed record GameInputResult(
     InputSchedulingStatus Status,
@@ -14,6 +18,7 @@ public sealed class RollbackGameSession
     private readonly Dictionary<PlayerId, InputTimeline> _inputTimelines;
     private readonly Dictionary<long, GameSnapshot> _snapshots = [];
     private readonly Dictionary<long, string> _stateHashes = [];
+    private readonly Dictionary<long, IReadOnlyList<FoodEatenEvent>> _foodEatenEventsByTick = [];
 
     public RollbackGameSession(GameState initialState)
     {
@@ -33,6 +38,12 @@ public sealed class RollbackGameSession
     public GameState CurrentState { get; private set; }
 
     public GameTick CurrentTick => CurrentState.Tick;
+
+    public IReadOnlyList<FoodEatenEvent> FoodEatenEvents =>
+        _foodEatenEventsByTick
+            .OrderBy(pair => pair.Key)
+            .SelectMany(pair => pair.Value)
+            .ToArray();
 
     public IReadOnlyDictionary<PlayerId, Direction> OutgoingDirectionsAt(GameTick tick) =>
         _inputTimelines.ToDictionary(
@@ -90,10 +101,15 @@ public sealed class RollbackGameSession
 
     private GameFrame AdvanceOneTick(bool trimHistory)
     {
+        IReadOnlyList<FoodEatenEvent> foodEaten = Array.Empty<FoodEatenEvent>();
+
         if (CurrentState.Status == GameStatus.Running)
         {
             var inputs = BuildInputs(CurrentState.Tick);
-            CurrentState = SnakeGameEngine.Advance(CurrentState, inputs, Rules);
+            var advance = SnakeGameEngine.AdvanceDetailed(CurrentState, inputs, Rules);
+            CurrentState = advance.State;
+            foodEaten = advance.FoodEaten;
+            _foodEatenEventsByTick[CurrentState.Tick.Value] = advance.FoodEaten;
             StoreSnapshot(CurrentState);
 
             if (trimHistory)
@@ -102,7 +118,7 @@ public sealed class RollbackGameSession
             }
         }
 
-        return CreateFrame(CurrentState);
+        return CreateFrame(CurrentState, foodEaten);
     }
 
     private GameInputResult RollBackAndResimulate(InputScheduleResult schedule)
@@ -163,6 +179,11 @@ public sealed class RollbackGameSession
         {
             _stateHashes.Remove(key);
         }
+
+        foreach (var key in _foodEatenEventsByTick.Keys.Where(key => key > tick.Value).ToArray())
+        {
+            _foodEatenEventsByTick.Remove(key);
+        }
     }
 
     private void TrimHistory()
@@ -179,8 +200,14 @@ public sealed class RollbackGameSession
         }
     }
 
-    private static GameFrame CreateFrame(GameState state) =>
-        new(state.Tick, state.Copy(), SnakeGameEngine.ComputeStateHash(state));
+    private static GameFrame CreateFrame(
+        GameState state,
+        IReadOnlyList<FoodEatenEvent>? foodEaten = null) =>
+        new(
+            state.Tick,
+            state.Copy(),
+            SnakeGameEngine.ComputeStateHash(state),
+            foodEaten ?? Array.Empty<FoodEatenEvent>());
 
     private static GameInputResult Rejected(InputSchedulingStatus status) =>
         new(

@@ -11,6 +11,8 @@ public sealed class SecureRoomIdentityProvider : IRoomIdentityProvider
 
     public string CreatePlayerId() => $"player_{CreateToken(bytes: 12)}";
 
+    public Guid CreateTemporaryUserId() => Guid.NewGuid();
+
     public string CreatePlayerSessionToken() => CreateToken(bytes: 32);
 
     public string CreateMatchId() => $"match_{CreateToken(bytes: 12)}";

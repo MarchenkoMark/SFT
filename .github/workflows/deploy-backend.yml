@@ -52,7 +52,7 @@ jobs:
 
       - name: Sync backend deployment files
         run: |
-          rsync -az \
+          rsync -az --checksum \
             --exclude '.git/' \
             --exclude 'bin/' \
             --exclude 'obj/' \
@@ -60,6 +60,15 @@ jobs:
             -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.PROD_SSH_PORT }}" \
             compose.prod.yml Backend/ deploy/ \
             "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/"
+
+      - name: Verify synced telemetry source
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' \
+              && grep -q 'AddOpenTelemetry' Backend/src/SnakeForTwo.Api/Program.cs \
+              && grep -q 'WithTracing' Backend/src/SnakeForTwo.Api/Program.cs \
+              && grep -q 'OpenTelemetry.Exporter.OpenTelemetryProtocol' Backend/src/SnakeForTwo.Api/SnakeForTwo.Api.csproj"
 
       - name: Configure production telemetry environment
         env:
@@ -127,6 +136,15 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
             "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
             "cd '${{ secrets.PROD_DEPLOY_PATH }}' && docker compose --env-file .env -f compose.prod.yml up --build -d"
+
+      - name: Verify production telemetry build
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' \
+              && docker compose --env-file .env -f compose.prod.yml exec -T backend sh -lc \
+                \"grep -a 'OpenTelemetry.Exporter.OpenTelemetryProtocol' SnakeForTwo.Api.deps.json >/dev/null \
+                  && grep -a 'OpenTelemetry.Instrumentation.AspNetCore' SnakeForTwo.Api.deps.json >/dev/null\""
 
       - name: Verify production health endpoint
         run: curl --fail --show-error --silent https://api.snakefortwo.com/health

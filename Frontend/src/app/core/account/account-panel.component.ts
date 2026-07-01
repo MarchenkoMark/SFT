@@ -33,7 +33,11 @@ import { AccountService } from './account.service';
               placeholder="Choose a username"
               [formControl]="username"
             />
-            <button type="submit" [disabled]="username.invalid || state.isSavingUsername">
+            <button
+              type="button"
+              [disabled]="username.invalid || state.isSavingUsername"
+              (click)="saveUsername()"
+            >
               Save
             </button>
           </form>

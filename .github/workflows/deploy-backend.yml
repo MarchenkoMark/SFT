@@ -58,7 +58,7 @@ jobs:
             --exclude 'obj/' \
             --exclude 'node_modules/' \
             -e "ssh -i ~/.ssh/deploy_key -p ${{ secrets.PROD_SSH_PORT }}" \
-            compose.prod.yml Backend/ deploy/ \
+            compose.prod.yml Backend deploy \
             "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/"
 
       - name: Verify synced telemetry source
@@ -66,9 +66,9 @@ jobs:
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
             "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
             "cd '${{ secrets.PROD_DEPLOY_PATH }}' \
-              && grep -q 'AddOpenTelemetry' Backend/src/SnakeForTwo.Api/Program.cs \
-              && grep -q 'WithTracing' Backend/src/SnakeForTwo.Api/Program.cs \
-              && grep -q 'OpenTelemetry.Exporter.OpenTelemetryProtocol' Backend/src/SnakeForTwo.Api/SnakeForTwo.Api.csproj"
+              && grep -n 'AddOpenTelemetry' Backend/src/SnakeForTwo.Api/Program.cs \
+              && grep -n 'WithTracing' Backend/src/SnakeForTwo.Api/Program.cs \
+              && grep -n 'OpenTelemetry.Exporter.OpenTelemetryProtocol' Backend/src/SnakeForTwo.Api/SnakeForTwo.Api.csproj"
 
       - name: Configure production telemetry environment
         env:

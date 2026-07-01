@@ -22,6 +22,7 @@ public partial class AddLightweightAccounts : Migration
                 email = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
                 normalized_email = table.Column<string>(type: "character varying(320)", maxLength: 320, nullable: true),
                 picture_url = table.Column<string>(type: "character varying(2048)", maxLength: 2048, nullable: true),
+                has_custom_username = table.Column<bool>(type: "boolean", nullable: false),
                 created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                 updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                 last_signed_in_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)

@@ -1,6 +1,7 @@
 export interface AccountUser {
   userId: string;
   username: string;
+  hasCustomUsername: boolean;
   email: string | null;
   pictureUrl: string | null;
 }

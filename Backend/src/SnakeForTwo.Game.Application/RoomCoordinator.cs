@@ -984,7 +984,7 @@ public sealed class GameRoomCoordinator(
             seat,
             identityProvider.CreatePlayerSessionToken(),
             connectionId,
-            authenticatedPlayer?.Username ?? NormalizeDisplayName(displayName));
+            authenticatedPlayer?.DisplayName ?? NormalizeDisplayName(displayName));
 
     private string CreateUniqueRoomId()
     {
@@ -1063,7 +1063,7 @@ public sealed class GameRoomCoordinator(
         var normalized = displayName?.Trim();
         if (string.IsNullOrWhiteSpace(normalized))
         {
-            return null;
+            return UsernameRules.GuestDisplayName;
         }
 
         const int maxDisplayNameLength = 40;

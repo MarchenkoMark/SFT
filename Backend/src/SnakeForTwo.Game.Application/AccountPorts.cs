@@ -2,6 +2,8 @@ namespace SnakeForTwo.Game.Application;
 
 public static class UsernameRules
 {
+    public const string GuestDisplayName = "guest";
+
     public const int MinLength = 3;
 
     public const int MaxLength = 24;
@@ -12,7 +14,8 @@ public static class UsernameRules
 
 public sealed record AuthenticatedPlayerIdentity(
     Guid UserId,
-    string Username);
+    string DisplayName,
+    bool HasCustomUsername);
 
 public sealed record ExternalLoginProfile(
     string Provider,
@@ -24,11 +27,17 @@ public sealed record ExternalLoginProfile(
 public sealed record UserAccount(
     Guid UserId,
     string Username,
+    bool HasCustomUsername,
     string? Email,
     string? PictureUrl,
     DateTimeOffset CreatedAt,
     DateTimeOffset UpdatedAt,
-    DateTimeOffset LastSignedInAt);
+    DateTimeOffset LastSignedInAt)
+{
+    public string DisplayName => HasCustomUsername
+        ? Username
+        : UsernameRules.GuestDisplayName;
+}
 
 public interface IUserAccountStore
 {

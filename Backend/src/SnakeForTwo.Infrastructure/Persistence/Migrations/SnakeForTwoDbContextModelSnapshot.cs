@@ -48,6 +48,10 @@ partial class SnakeForTwoDbContextModelSnapshot : ModelSnapshot
                 .HasColumnType("character varying(2048)")
                 .HasColumnName("picture_url");
 
+            b.Property<bool>("HasCustomUsername")
+                .HasColumnType("boolean")
+                .HasColumnName("has_custom_username");
+
             b.Property<DateTimeOffset>("UpdatedAt")
                 .HasColumnType("timestamp with time zone")
                 .HasColumnName("updated_at");

@@ -22,6 +22,7 @@ public sealed class RoomCoordinatorTests
         Assert.Equal(1, player.Seat);
         Assert.True(player.IsConnected);
         Assert.False(player.IsReady);
+        Assert.Equal("guest", player.DisplayName);
     }
 
     [Fact]
@@ -223,7 +224,10 @@ public sealed class RoomCoordinatorTests
         var created = GetCreated(coordinator.CreateRoom(
             "connection-1",
             displayName: "Ignored",
-            authenticatedPlayer: new AuthenticatedPlayerIdentity(userId, "MarkPlayer")));
+            authenticatedPlayer: new AuthenticatedPlayerIdentity(
+                userId,
+                "MarkPlayer",
+                HasCustomUsername: true)));
         coordinator.JoinRoom("connection-2", created.RoomId, displayName: "Grace");
         coordinator.SetReady("connection-1", created.RoomId, isReady: true);
         coordinator.SetReady("connection-2", created.RoomId, isReady: true);
@@ -243,6 +247,23 @@ public sealed class RoomCoordinatorTests
         var second = finished.Summary.Participants.Single(participant => participant.Seat == 2);
         Assert.Null(second.UserId);
         Assert.Equal("Grace", second.DisplayName);
+    }
+
+    [Fact]
+    public void Authenticated_player_without_custom_username_is_displayed_as_guest()
+    {
+        var userId = Guid.Parse("11111111-1111-1111-1111-111111111111");
+        var coordinator = CreateCoordinator();
+
+        var created = GetCreated(coordinator.CreateRoom(
+            "connection-1",
+            authenticatedPlayer: new AuthenticatedPlayerIdentity(
+                userId,
+                "guest",
+                HasCustomUsername: false)));
+
+        var player = Assert.Single(created.Room.Players);
+        Assert.Equal("guest", player.DisplayName);
     }
 
     [Fact]

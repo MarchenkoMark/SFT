@@ -74,6 +74,12 @@ internal static class AccountEndpoints
             return Results.Ok(AccountResponse.SignedOut);
         }
 
+        if (AccountClaims.GetUsername(context.User) != user.DisplayName ||
+            AccountClaims.GetHasCustomUsername(context.User) != user.HasCustomUsername)
+        {
+            await SignInAccountAsync(context, user);
+        }
+
         return Results.Ok(AccountResponse.SignedIn(user));
     }
 
@@ -99,14 +105,7 @@ internal static class AccountEndpoints
         switch (result.Status)
         {
             case UsernameUpdateStatus.Updated:
-                await context.SignInAsync(
-                    CookieAuthenticationDefaults.AuthenticationScheme,
-                    AccountClaims.CreatePrincipal(result.User!),
-                    new AuthenticationProperties
-                    {
-                        AllowRefresh = true,
-                        IsPersistent = true
-                    });
+                await SignInAccountAsync(context, result.User!);
                 return Results.Ok(AccountResponse.SignedIn(result.User!));
 
             case UsernameUpdateStatus.Invalid:
@@ -154,6 +153,16 @@ internal static class AccountEndpoints
     private static bool IsGoogleConfigured(IConfiguration configuration) =>
         !string.IsNullOrWhiteSpace(configuration["Authentication:Google:ClientId"]) &&
         !string.IsNullOrWhiteSpace(configuration["Authentication:Google:ClientSecret"]);
+
+    private static Task SignInAccountAsync(HttpContext context, UserAccount user) =>
+        context.SignInAsync(
+            CookieAuthenticationDefaults.AuthenticationScheme,
+            AccountClaims.CreatePrincipal(user),
+            new AuthenticationProperties
+            {
+                AllowRefresh = true,
+                IsPersistent = true
+            });
 
     private static string ResolveFrontendRedirectUri(
         string? requestedUri,
@@ -215,7 +224,8 @@ internal static class AccountEndpoints
         public static AccountResponse SignedIn(UserAccount user) =>
             new(true, new AccountUserResponse(
                 user.UserId,
-                user.Username,
+                user.DisplayName,
+                user.HasCustomUsername,
                 user.Email,
                 user.PictureUrl));
     }
@@ -223,6 +233,7 @@ internal static class AccountEndpoints
     private sealed record AccountUserResponse(
         Guid UserId,
         string Username,
+        bool HasCustomUsername,
         string? Email,
         string? PictureUrl);
 }

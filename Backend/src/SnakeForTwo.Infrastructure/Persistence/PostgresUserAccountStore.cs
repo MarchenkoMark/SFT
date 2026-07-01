@@ -56,6 +56,7 @@ public sealed partial class PostgresUserAccountStore(SnakeForTwoDbContext dbCont
                 Email = NormalizeOptional(profile.Email),
                 NormalizedEmail = NormalizeEmail(profile.Email),
                 PictureUrl = NormalizeOptional(profile.PictureUrl),
+                HasCustomUsername = false,
                 CreatedAt = signedInAt,
                 UpdatedAt = signedInAt,
                 LastSignedInAt = signedInAt
@@ -125,6 +126,11 @@ public sealed partial class PostgresUserAccountStore(SnakeForTwoDbContext dbCont
         }
 
         var normalizedUsername = NormalizeUsername(username);
+        if (normalizedUsername == NormalizeUsername(UsernameRules.GuestDisplayName))
+        {
+            return UsernameUpdateResult.Invalid("Choose a username other than guest.");
+        }
+
         var user = await dbContext.UserAccounts
             .SingleOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
         if (user is null)
@@ -135,6 +141,7 @@ public sealed partial class PostgresUserAccountStore(SnakeForTwoDbContext dbCont
         if (user.NormalizedUsername == normalizedUsername)
         {
             user.Username = username.Trim();
+            user.HasCustomUsername = true;
             user.UpdatedAt = updatedAt;
             await dbContext.SaveChangesAsync(cancellationToken);
             return UsernameUpdateResult.Updated(ToAccount(user));
@@ -151,6 +158,7 @@ public sealed partial class PostgresUserAccountStore(SnakeForTwoDbContext dbCont
 
         user.Username = username.Trim();
         user.NormalizedUsername = normalizedUsername;
+        user.HasCustomUsername = true;
         user.UpdatedAt = updatedAt;
 
         try
@@ -251,6 +259,7 @@ public sealed partial class PostgresUserAccountStore(SnakeForTwoDbContext dbCont
         new(
             entity.Id,
             entity.Username,
+            entity.HasCustomUsername,
             entity.Email,
             entity.PictureUrl,
             entity.CreatedAt,

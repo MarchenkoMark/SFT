@@ -30,6 +30,7 @@ import { AccountService } from './account.service';
               id="accountUsername"
               type="text"
               autocomplete="nickname"
+              placeholder="Choose a username"
               [formControl]="username"
             />
             <button type="submit" [disabled]="username.invalid || state.isSavingUsername">
@@ -192,7 +193,8 @@ import { AccountService } from './account.service';
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AccountPanelComponent {
-  private readonly loadedUsernames = new Set<string>();
+  private lastSyncedUsername: string | null = null;
+  private pendingSavedUsername: string | null = null;
   readonly account = inject(AccountService);
   readonly username = new FormControl('', {
     nonNullable: true,
@@ -209,10 +211,18 @@ export class AccountPanelComponent {
     this.account.state$
       .pipe(takeUntilDestroyed())
       .subscribe((state) => {
-        const username = state.user?.username;
-        if (username && !this.loadedUsernames.has(username)) {
-          this.loadedUsernames.add(username);
-          this.username.setValue(username, { emitEvent: false });
+        if (!state.user || state.isSavingUsername) {
+          return;
+        }
+
+        const formUsername = state.user.hasCustomUsername ? state.user.username : '';
+        if (
+          formUsername !== this.lastSyncedUsername &&
+          (!this.username.dirty || this.pendingSavedUsername === formUsername)
+        ) {
+          this.lastSyncedUsername = formUsername;
+          this.pendingSavedUsername = null;
+          this.username.setValue(formUsername, { emitEvent: false });
           this.username.markAsPristine();
         }
       });
@@ -224,6 +234,8 @@ export class AccountPanelComponent {
       return;
     }
 
-    this.account.updateUsername(this.username.value);
+    const username = this.username.value.trim();
+    this.pendingSavedUsername = username;
+    this.account.updateUsername(username);
   }
 }

@@ -80,7 +80,12 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
         var windowStart = WindowStart(window, now);
         var query = dbContext.MatchParticipants
             .AsNoTracking()
-            .Where(participant => participant.Match != null);
+            .Where(participant => participant.Match != null)
+            .Where(participant =>
+                participant.UserId == null
+                    ? participant.DisplayName != null &&
+                        participant.DisplayName != UsernameRules.GuestDisplayName
+                    : participant.User != null && participant.User.HasCustomUsername);
 
         if (windowStart is not null)
         {
@@ -97,7 +102,9 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
                 participant.TemporaryUserId,
                 participant.UserId,
                 participant.PlayerId,
-                DisplayName = participant.User != null ? participant.User.Username : participant.DisplayName,
+                DisplayName = participant.User != null
+                    ? participant.User.Username
+                    : participant.DisplayName,
                 participant.Seat,
                 participant.Score,
                 participant.OwnFoodEaten,
@@ -213,7 +220,7 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
             entity.TemporaryUserId,
             entity.UserId,
             entity.PlayerId,
-            entity.User?.Username ?? entity.DisplayName,
+            DisplayNameFor(entity),
             entity.Seat,
             entity.Alive,
             entity.FinalLength,
@@ -221,6 +228,20 @@ public sealed class PostgresMatchSummaryStore(SnakeForTwoDbContext dbContext) :
             entity.TeammateFoodEaten,
             entity.FoodEatenByTeammates,
             entity.Score);
+
+    private static string DisplayNameFor(MatchParticipantEntity entity)
+    {
+        if (entity.User is not null)
+        {
+            return entity.User.HasCustomUsername
+                ? entity.User.Username
+                : UsernameRules.GuestDisplayName;
+        }
+
+        return string.IsNullOrWhiteSpace(entity.DisplayName)
+            ? UsernameRules.GuestDisplayName
+            : entity.DisplayName;
+    }
 
     private static DateTimeOffset? WindowStart(LeaderboardWindow window, DateTimeOffset now)
     {

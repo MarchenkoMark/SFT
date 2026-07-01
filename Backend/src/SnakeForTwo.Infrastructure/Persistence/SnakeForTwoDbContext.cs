@@ -26,6 +26,9 @@ public sealed class SnakeForTwoDbContext(DbContextOptions<SnakeForTwoDbContext> 
         user.Property(entity => entity.Email).HasColumnName("email").HasMaxLength(320);
         user.Property(entity => entity.NormalizedEmail).HasColumnName("normalized_email").HasMaxLength(320);
         user.Property(entity => entity.PictureUrl).HasColumnName("picture_url").HasMaxLength(2048);
+        user.Property(entity => entity.HasCustomUsername)
+            .HasColumnName("has_custom_username")
+            .IsRequired();
         user.Property(entity => entity.CreatedAt).HasColumnName("created_at").IsRequired();
         user.Property(entity => entity.UpdatedAt).HasColumnName("updated_at").IsRequired();
         user.Property(entity => entity.LastSignedInAt).HasColumnName("last_signed_in_at").IsRequired();
@@ -123,6 +126,8 @@ public sealed class UserAccountEntity
     public string? NormalizedEmail { get; set; }
 
     public string? PictureUrl { get; set; }
+
+    public bool HasCustomUsername { get; set; }
 
     public DateTimeOffset CreatedAt { get; set; }
 

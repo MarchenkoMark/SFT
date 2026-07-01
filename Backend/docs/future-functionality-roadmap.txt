@@ -392,18 +392,17 @@ Risks And Product Decisions To Make
 Open decisions:
 
 - Should the $5 Party Pass be host-only, or should every 3+ player need it?
-  Recommendation: host-only.
+  Answer: host-only.
 
 - Should leaderboard scores require all players to be logged in?
-  Recommendation: no for team scores, yes for career/user-specific stats.
+  Answer: Leaderboard will only show a player, not team-wide leaderboard.
 
 - Should 3+ mode be co-op only?
   Recommendation: yes for the first paid mode. PvP creates extra design and
   fairness questions.
 
 - Should the product start with $5 or $9?
-  Recommendation: start with $5 for friendliness, but consider a $9 Founder
-  Pass if payment/tax/admin overhead makes $5 feel too thin.
+  Answer: : start with $5 for friendliness
 
 Main risks:
 

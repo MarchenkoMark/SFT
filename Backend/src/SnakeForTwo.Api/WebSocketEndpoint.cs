@@ -490,7 +490,10 @@ internal sealed class WebSocketEndpoint
         var username = AccountClaims.GetUsername(user);
         return userId is null || string.IsNullOrWhiteSpace(username)
             ? null
-            : new AuthenticatedPlayerIdentity(userId.Value, username);
+            : new AuthenticatedPlayerIdentity(
+                userId.Value,
+                username,
+                AccountClaims.GetHasCustomUsername(user));
     }
 
     private async ValueTask<ClientMessageOutcome> SendMalformedAsync(

@@ -192,6 +192,12 @@ jobs:
             "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
             "cd '${{ secrets.PROD_DEPLOY_PATH }}' && docker compose --env-file .env -f compose.prod.yml up --build -d"
 
+      - name: Ensure auth key volume permissions
+        run: |
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' && docker compose --env-file .env -f compose.prod.yml exec -T -u root backend sh -lc 'chown -R \"\$APP_UID:\$APP_UID\" /var/lib/snakefortwo/data-protection-keys'"
+
       - name: Verify production telemetry build
         run: |
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \

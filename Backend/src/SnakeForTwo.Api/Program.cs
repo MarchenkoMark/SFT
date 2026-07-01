@@ -1,12 +1,71 @@
 using System.Reflection;
+using OpenTelemetry.Logs;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
 using SnakeForTwo.Api;
 using SnakeForTwo.Game.Application;
 using SnakeForTwo.Infrastructure;
 
+const string ServiceName = "SnakeForTwo.Api";
+const string ServiceNamespace = "snakefortwo";
+
 var builder = WebApplication.CreateBuilder(args);
+var assembly = typeof(Program).Assembly;
+var serviceVersion = assembly.GetName().Version?.ToString() ?? "unknown";
+var informationalVersion = assembly
+    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
+    ?.InformationalVersion ?? serviceVersion;
+var deploymentEnvironment = builder.Environment.EnvironmentName.ToLowerInvariant();
+var otlpEndpointConfigured = !string.IsNullOrWhiteSpace(
+    builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]);
+
 var allowedCorsOrigins = builder.Configuration
     .GetSection("Cors:AllowedOrigins")
     .Get<string[]>() ?? [];
+
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource
+        .AddService(
+            serviceName: ServiceName,
+            serviceNamespace: ServiceNamespace,
+            serviceVersion: informationalVersion)
+        .AddAttributes(new Dictionary<string, object>
+        {
+            ["deployment.environment"] = deploymentEnvironment
+        }))
+    .WithMetrics(metrics =>
+    {
+        metrics
+            .AddAspNetCoreInstrumentation()
+            .AddRuntimeInstrumentation()
+            .AddMeter(GameMetrics.MeterName);
+
+        if (otlpEndpointConfigured)
+        {
+            metrics.AddOtlpExporter();
+        }
+    });
+
+builder.Logging.AddOpenTelemetry(logging =>
+{
+    logging.IncludeScopes = true;
+    logging.IncludeFormattedMessage = true;
+    logging.ParseStateValues = true;
+    logging.SetResourceBuilder(ResourceBuilder.CreateDefault()
+        .AddService(
+            serviceName: ServiceName,
+            serviceNamespace: ServiceNamespace,
+            serviceVersion: informationalVersion)
+        .AddAttributes(new Dictionary<string, object>
+        {
+            ["deployment.environment"] = deploymentEnvironment
+        }));
+
+    if (otlpEndpointConfigured)
+    {
+        logging.AddOtlpExporter();
+    }
+});
 
 builder.Services.AddCors(options =>
 {
@@ -47,11 +106,6 @@ builder.Services.AddSingleton<WebSocketEndpoint>();
 builder.Services.AddHostedService<RoomTimerHostedService>();
 
 var app = builder.Build();
-var assembly = typeof(Program).Assembly;
-var serviceVersion = assembly.GetName().Version?.ToString() ?? "unknown";
-var informationalVersion = assembly
-    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()
-    ?.InformationalVersion ?? serviceVersion;
 
 app.UseCors("Frontend");
 app.UseWebSockets();
@@ -59,7 +113,7 @@ app.UseWebSockets();
 app.Lifetime.ApplicationStarted.Register(() =>
     app.Logger.LogInformation(
         "Server started: {Service} {Version} in {Environment}.",
-        "SnakeForTwo.Api",
+        ServiceName,
         informationalVersion,
         app.Environment.EnvironmentName));
 

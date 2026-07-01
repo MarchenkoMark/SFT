@@ -8,6 +8,12 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: http://+:8080
+      DOTNET_EnableDiagnostics: "1"
+      OTEL_SERVICE_NAME: ${OTEL_SERVICE_NAME:-SnakeForTwo.Api}
+      OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-deployment.environment=production,service.namespace=snakefortwo}
+      OTEL_EXPORTER_OTLP_PROTOCOL: ${OTEL_EXPORTER_OTLP_PROTOCOL:-http/protobuf}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
       Game__TilesPerSecond: "2"
       Game__AnimationFramesPerTile: "5"
       Game__RollbackHistorySeconds: "5"

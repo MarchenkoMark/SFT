@@ -61,6 +61,46 @@ jobs:
             compose.prod.yml Backend/ deploy/ \
             "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/"
 
+      - name: Configure production telemetry environment
+        env:
+          GRAFANA_OTLP_ENDPOINT: ${{ secrets.GRAFANA_OTLP_ENDPOINT }}
+          GRAFANA_OTLP_HEADERS: ${{ secrets.GRAFANA_OTLP_HEADERS }}
+        run: |
+          if [ -z "${GRAFANA_OTLP_ENDPOINT}" ] || [ -z "${GRAFANA_OTLP_HEADERS}" ]; then
+            echo "::error::Add GRAFANA_OTLP_ENDPOINT and GRAFANA_OTLP_HEADERS repository secrets before deploying."
+            exit 1
+          fi
+
+          telemetry_env="$(mktemp)"
+          trap 'rm -f "$telemetry_env"' EXIT
+
+          {
+            printf 'OTEL_SERVICE_NAME=SnakeForTwo.Api\n'
+            printf 'OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.namespace=snakefortwo\n'
+            printf 'OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf\n'
+            printf 'OTEL_EXPORTER_OTLP_ENDPOINT=%s\n' "$GRAFANA_OTLP_ENDPOINT"
+            printf 'OTEL_EXPORTER_OTLP_HEADERS=%s\n' "$GRAFANA_OTLP_HEADERS"
+          } > "$telemetry_env"
+          chmod 600 "$telemetry_env"
+
+          scp -i ~/.ssh/deploy_key -P "${{ secrets.PROD_SSH_PORT }}" \
+            "$telemetry_env" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}:${{ secrets.PROD_DEPLOY_PATH }}/.otel.env"
+
+          ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \
+            "${{ secrets.PROD_SSH_USER }}@${{ secrets.PROD_SSH_HOST }}" \
+            "cd '${{ secrets.PROD_DEPLOY_PATH }}' && sh -s" <<'REMOTE_SCRIPT'
+          set -eu
+          touch .env
+          tmp_env=".env.telemetry.$$"
+          awk '!/^(OTEL_SERVICE_NAME|OTEL_RESOURCE_ATTRIBUTES|OTEL_EXPORTER_OTLP_PROTOCOL|OTEL_EXPORTER_OTLP_ENDPOINT|OTEL_EXPORTER_OTLP_HEADERS)=/' .env > "$tmp_env"
+          printf '\n' >> "$tmp_env"
+          cat .otel.env >> "$tmp_env"
+          mv "$tmp_env" .env
+          chmod 600 .env
+          rm -f .otel.env
+          REMOTE_SCRIPT
+
       - name: Validate production compose config
         run: |
           ssh -i ~/.ssh/deploy_key -p "${{ secrets.PROD_SSH_PORT }}" \

@@ -1,12 +1,12 @@
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 
-import { NetworkDelayPanelComponent } from './core/realtime/network-delay-panel.component';
 import { ServerMessageDispatcherService } from './core/realtime/server-message-dispatcher.service';
+import { LeaderboardPanelComponent } from './features/leaderboard/leaderboard-panel.component';
 
 @Component({
   selector: 'app-root',
-  imports: [NetworkDelayPanelComponent, RouterOutlet],
+  imports: [LeaderboardPanelComponent, RouterOutlet],
   templateUrl: './app.html',
   styleUrl: './app.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

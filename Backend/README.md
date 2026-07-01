@@ -64,3 +64,30 @@ Read endpoints:
 
 Writes are backend-owned only. During Phase 2, each player gets a temporary UUID
 and optional display name; Phase 3 accounts can replace that identity link.
+
+### Persistence API
+
+`GET /leaderboard` returns public leaderboard rows from persisted,
+server-authoritative match summaries. Query parameters:
+
+- `window`: `daily`, `monthly`, or `all-time`. Defaults to `daily`.
+- `limit`: number of rows to return, clamped from 1 to 100. Defaults to 50.
+
+Each leaderboard entry includes rank, match id, mode, finished time, temporary
+user id, player id, optional display name, seat, score, duration ticks, food
+counts, and player count.
+
+`GET /matches` returns recent persisted matches. Query parameters:
+
+- `limit`: number of matches to return, clamped from 1 to 100. Defaults to 50.
+
+Each match list item includes match id, room id, mode, start/finish time,
+duration ticks, result, reason, player count, and participant summaries.
+
+`GET /matches/{matchId}` returns a single full match summary, including board
+size, seed, final state hash, duration milliseconds, and all participant
+summary rows. It returns `404` when the match id is unknown.
+
+If persistence is not configured, the read endpoints return `503` with a message
+explaining that `Persistence:Enabled` and `ConnectionStrings:SnakeForTwo` are
+required.

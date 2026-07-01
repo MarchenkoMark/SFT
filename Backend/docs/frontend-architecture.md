@@ -237,6 +237,28 @@ interface TurnIntentAcceptedMessage {
 
 Canonical game coordinates are math-style: `X` increases right and `Y` increases upward. Canvas rendering should invert `Y` only at the drawing boundary.
 
+### Public Persistence APIs
+
+The backend also exposes public HTTP read APIs for Phase 2 persistence. These are
+not part of the hot WebSocket game loop and should be consumed like ordinary
+HTTP resources:
+
+- `GET /leaderboard?window=daily|monthly|all-time&limit=50`
+- `GET /matches?limit=50`
+- `GET /matches/{matchId}`
+
+`/leaderboard` returns ranked participant rows from persisted,
+server-authoritative match summaries. Each row includes rank, match id, mode,
+finished time, temporary user id, player id, optional display name, seat, score,
+duration ticks, food counters, and player count.
+
+`/matches` returns recent match summaries with participants. `/matches/{matchId}`
+returns one full persisted match summary or `404`.
+
+The frontend must not submit scores. Scores are created only by the backend when
+a match finishes. If these endpoints return `503`, persistence is disabled for
+that backend environment.
+
 ## 6. State Model With Akita
 
 Use Akita for meaningful state transitions, not per-animation-frame data.

@@ -461,10 +461,111 @@ Current infrastructure should be:
 
 - In-memory room registry.
 - In-memory match state and rollback history.
+- PostgreSQL-backed match summaries and leaderboard reads.
 - Logging/metrics through normal ASP.NET Core observability.
 - No external broker required to run the game.
 
 Future event streaming can be revisited for analytics, replay, or leaderboards. If Kafka is added later, it should remain outside the hot gameplay path and use `matchId` as the topic key so all events for one match stay ordered within one partition.
+
+### Phase 2 Persistence
+
+Phase 2 adds durable match summaries without accounts. The important boundary is
+that PostgreSQL is not part of the active simulation path:
+
+```mermaid
+flowchart LR
+    Loop["In-memory room and match loop"]
+    Result["MatchFinishedEvent"]
+    Queue["BackgroundGameEventPublisher"]
+    Worker["GameEventPersistenceHostedService"]
+    Pg[("PostgreSQL")]
+    Api["Read API"]
+    Client["Clients / admin tools"]
+
+    Loop --> Result
+    Result --> Queue
+    Queue --> Worker
+    Worker --> Pg
+    Pg --> Api
+    Api --> Client
+```
+
+Runtime behavior:
+
+1. The room coordinator keeps live room state, player session tokens, rollback
+   snapshots, input timelines, and current game state in memory.
+2. When a game finishes from engine loss, forfeit, disconnect timeout, or an
+   explicit finish command, the coordinator creates a `MatchFinishedEvent`.
+3. The event contains a `MatchSummary` built from server-authoritative final
+   state and the canonical food-eaten timeline after rollback corrections.
+4. `WebSocketConnectionRegistry.DispatchAsync` publishes result events after it
+   sends socket messages and closes requested stale sockets.
+5. `BackgroundGameEventPublisher` queues events in memory.
+6. `GameEventPersistenceHostedService` consumes that queue and writes match
+   summaries through `IMatchSummaryWriter`.
+7. The PostgreSQL store treats `match_id` as idempotent. Repeated writes of the
+   same match are ignored.
+
+The database schema is intentionally small:
+
+- `match_summaries`
+  - one row per finished match,
+  - match id, room id, mode, start/finish time, duration, result/reason,
+  - board size, seed, final state hash, player count.
+- `match_participants`
+  - one row per player in a persisted match,
+  - temporary user id, player id, optional display name, seat,
+  - final alive/length state,
+  - food counters and score.
+
+During Phase 2 there are no accounts. Each player receives a temporary UUID when
+they reserve a room seat. The WebSocket `createRoom` and `joinRoom` messages may
+include an optional `displayName`; if supplied, that display name is included in
+room state and persisted with the match participant row. Phase 3 accounts should
+replace the temporary UUID with a real user id and decide whether anonymous
+players should be persisted at all.
+
+Score is computed only on the server:
+
+```text
+score =
+  (duration_ticks
+  + own_food_eaten * 50
+  - teammate_food_eaten * 30
+  + food_eaten_by_teammates * 30)
+  * player_count_bonus
+```
+
+Current player-count bonus:
+
+- 1.0 for two-player rooms.
+- 1.15 for three players.
+- 1.3 for four players.
+- 1.5 for five or more players.
+
+The current public read APIs are:
+
+- `GET /leaderboard?window=daily|monthly|all-time&limit=50`
+- `GET /matches?limit=50`
+- `GET /matches/{matchId}`
+
+`/leaderboard` returns ranked participant rows for the chosen time window.
+Daily and monthly windows are calculated in UTC from the server clock. All-time
+has no lower time bound. `limit` is clamped to 1..100.
+
+`/matches` returns the most recent persisted match summaries with participant
+rows. `GET /matches/{matchId}` returns the full summary for one match or `404`
+if the match id is unknown.
+
+These endpoints are intentionally unauthenticated. Reads are public; writes only
+happen inside the backend from server-authoritative game results. If persistence
+is disabled or no PostgreSQL connection string is configured, the read endpoints
+return `503`.
+
+PostgreSQL is the source of truth for these durable summaries. Redis is still a
+future option for short-lived state such as rate-limit counters, presence,
+multi-node room directory data, or cache entries, but it is not used for durable
+leaderboards in Phase 2.
 
 ## 14. Testing Strategy
 

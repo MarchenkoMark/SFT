@@ -115,13 +115,8 @@ export class RoomFacade {
     });
   }
 
-  readyForRematch(): void {
-    this.gameSessionStore.hideGameOver();
-    this.toggleReady();
-  }
-
-  dismissGameOver(): void {
-    this.gameSessionStore.hideGameOver();
+  tryAgain(): void {
+    this.gameSessionStore.resetSession();
   }
 
   leaveRoom(): void {

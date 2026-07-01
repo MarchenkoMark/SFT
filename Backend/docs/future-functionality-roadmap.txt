@@ -1,0 +1,476 @@
+SnakeForTwo Future Functionality And Paid Mode Roadmap
+Generated: 2026-06-30
+
+Context
+-------
+The architecture is already beyond a pure POC shape. The current design has a
+server-authoritative, rollback-aware game engine, raw WebSockets, anonymous room
+tokens, in-memory room/match state, and a single backend instance behind Caddy.
+The frontend architecture is similarly mature: Angular, Akita stores, strict
+protocol models, local prediction, authoritative correction handling, and Canvas
+rendering.
+
+The strongest next product direction is:
+
+1. Ship a polished free two-player game that is easy to share.
+2. Add durable match summaries and leaderboards.
+3. Add lightweight accounts.
+4. Add a paid "Party Pass" that unlocks 3+ player room creation.
+
+The important architectural principle is that accounts, payments, stats, and
+leaderboards should not enter the hot gameplay loop. The match loop should stay
+in-memory and single-writer. Durable systems should receive room/match summary
+events at lifecycle boundaries, especially game finished.
+
+
+What The Current Architecture Already Enables
+---------------------------------------------
+The domain model is more general than the current product name implies:
+
+- GameState contains a list of snakes, not a hard-coded pair.
+- TickInputs is keyed by PlayerId, so input timelines are naturally per-player.
+- SnakeGameEngine.CreateInitialState requires at least two snakes, not exactly
+  two.
+- Food is already owned per player, which scales conceptually to N players.
+
+The current two-player constraint mostly lives in the application/lobby layer:
+
+- GameRoomCoordinator has MaxPlayersPerRoom = 2.
+- Room state, ready flow, errors, and copy assume "both players".
+- Room UI and invite flow are optimized around a two-seat room.
+- Spawn placement alternates odd/even seats and only has intentional positions
+  for seats 1-2, with fallback colors for seats 3+.
+
+This is good news. A 3+ mode is feasible without replacing the deterministic
+game engine, but it does require deliberate product and room lifecycle work.
+
+
+MVP Worth Sharing
+-----------------
+Before paid features, the project should feel complete as a free two-player
+game. Suggested MVP scope:
+
+- Complete the WebSocket protocol end to end: create, join, resume, ready,
+  input, authoritative frames, corrections, finish, leave, ping/pong.
+- Keep anonymous room and player session tokens for frictionless sharing.
+- Polish rematch flow after game over.
+- Add mobile-friendly touch input.
+- Hide or disable the network delay panel for public players.
+- Add server-side input/message rate limits and malformed-message close policy.
+- Add basic observability: room count, active match count, disconnects, input
+  latency, stale inputs, rollback depth, corrections, tick overruns.
+- Add a simple frontend error boundary and "reconnect/resume" behavior.
+- Add Playwright smoke tests for two browser sessions playing one game.
+
+This version can be shared without accounts. Room ids and player session tokens
+are enough for private invite games.
+
+
+Leaderboard Direction
+---------------------
+A leaderboard is a strong bridge between "fun prototype" and "sticky game".
+It can start before payments, but it needs persistence.
+
+Recommended first leaderboard:
+
+- Separate boards by mode:
+  - Two-player co-op.
+  - Three-player party co-op.
+  - Four-plus party co-op.
+- Separate time windows:
+  - Daily.
+  - Weekly.
+  - All-time.
+- Score from server-authoritative match results only.
+- Do not accept score submissions from the client.
+
+Possible score formula:
+
+score =
+  ticks_survived
+  + own_food_eaten * 50
+  + teammate_food_saved_or_assisted * 20
+  + player_count_bonus
+  + speed_multiplier
+
+Keep two-player and 3+ leaderboards separate at first. Comparing a 2-player
+room to a 5-player room will otherwise create balancing arguments before the
+game has enough data.
+
+Data model sketch:
+
+- users
+  - id
+  - display_name
+  - created_at
+  - last_seen_at
+
+- matches
+  - id
+  - room_id
+  - mode
+  - player_count
+  - board_width
+  - board_height
+  - tiles_per_second
+  - started_at
+  - finished_at
+  - result
+  - reason
+  - score
+  - final_tick
+  - state_hash
+
+- match_participants
+  - match_id
+  - player_id
+  - user_id nullable
+  - seat
+  - display_name_at_time
+  - connected_duration_ms
+
+- leaderboard_entries
+  - id
+  - match_id
+  - mode
+  - window_start
+  - window_kind
+  - score
+  - rank_snapshot optional
+
+For the first version, leaderboard entries can show a team name supplied by the
+host plus participant display names. User-specific career stats can be attached
+only for logged-in users.
+
+
+Paid Plan Options
+-----------------
+The cleanest monetization idea is a one-time "Party Pass":
+
+- Free:
+  - Create and join two-player private rooms.
+  - Rematch.
+  - Basic leaderboard viewing.
+
+- Party Pass, one-time purchase:
+  - Suggested price: $5 lifetime access.
+  - Unlock creation of 3+ player rooms.
+  - Let the paid user host rooms for free guests.
+  - Optional founder badge or room flair.
+  - Optional access to experimental party modifiers.
+
+Host-only entitlement is the best default. Requiring every player to pay would
+hurt the main growth loop, which is "send a link to friends and play now".
+Guests should be able to join a 3+ room without logging in. The paid account
+only needs to be checked when creating or configuring a premium room.
+
+Alternative paid shapes:
+
+- $5 lifetime Party Pass:
+  - Simple, friendly, low friction.
+  - Good for early validation.
+  - Revenue is capped per enthusiastic player.
+
+- $9 Founder Pass:
+  - Same unlocks as Party Pass.
+  - Adds founder badge, cosmetic room theme, and early-supporter positioning.
+  - Better margin if payment/tax/provider costs make $5 too thin.
+
+- $2.99/month Club:
+  - Better recurring revenue.
+  - Harder to justify for a casual browser game unless there are regular
+    events, seasons, cosmetics, and community features.
+
+Recommendation: start with $5 lifetime or $9 Founder Pass, not subscription.
+The game needs retention proof before recurring billing.
+
+
+Payment Provider Notes
+----------------------
+Stripe Checkout is the simplest direct integration for a one-time purchase in
+the current .NET backend. The server creates a Checkout Session, the player pays
+on Stripe-hosted checkout, and a webhook grants the entitlement after confirmed
+payment. Stripe docs currently describe Checkout Session mode=payment for
+one-time payments, customer creation options, automatic tax support, and webhook
+fulfillment.
+
+Stripe's published standard US card rate is 2.9% + $0.30 per successful
+domestic card transaction. On a $5 purchase, that is roughly $0.45 before any
+tax product costs, international card uplift, currency conversion, refunds, or
+disputes. This makes $5 viable, but not luxurious.
+
+Paddle is worth considering if global tax compliance is the bigger concern.
+Paddle positions itself as merchant-of-record-style all-in-one billing with
+tax/compliance included, and its published pay-as-you-go checkout rate is
+5% + $0.50. On a $5 purchase, that is roughly $0.75 before any special terms.
+Paddle's pricing page also says products under $10 should contact them for
+custom pricing, which matters for a $5 product.
+
+Practical recommendation:
+
+- If the first paid test is small and geographically limited, use Stripe
+  Checkout + Stripe Tax and keep the implementation simple.
+- If the intent is global paid distribution from day one and the priority is
+  reducing tax/admin burden, evaluate Paddle before building the payment layer.
+- Keep payment behind an IP/user feature flag until webhook fulfillment,
+  refunds, entitlement revocation, and account recovery are tested.
+
+Sources checked on 2026-06-30:
+
+- Stripe Checkout quickstart:
+  https://docs.stripe.com/checkout/quickstart
+- Stripe webhooks:
+  https://docs.stripe.com/webhooks
+- Stripe Tax:
+  https://docs.stripe.com/tax
+- Stripe pricing:
+  https://stripe.com/pricing
+- Paddle pricing:
+  https://www.paddle.com/pricing
+- Paddle developer concepts:
+  https://developer.paddle.com/concepts/
+
+
+Authentication And Entitlements
+-------------------------------
+Paid lifetime access requires real identity. A browser-only token in
+localStorage or sessionStorage is not enough because users need account
+recovery, device changes, and payment support.
+
+Recommended auth shape:
+
+- Keep anonymous play for free two-player rooms.
+- Add optional sign-in for:
+  - buying Party Pass,
+  - creating 3+ rooms,
+  - claiming leaderboard history,
+  - preserving display name and cosmetics.
+- Use passwordless email magic link or passkeys as the default.
+- Add Google OAuth later if sign-in friction is too high.
+- Store auth in secure, HTTP-only cookies for browser sessions if possible.
+- During WebSocket connection, authenticate the request and attach user id to
+  the connection if present.
+- Continue allowing unauthenticated WebSocket connections for free rooms and
+  guest seats.
+
+Entitlement model:
+
+- entitlements
+  - id
+  - user_id
+  - kind, e.g. party_pass
+  - source, e.g. stripe, paddle, manual
+  - source_payment_id
+  - status, e.g. active, refunded, revoked
+  - granted_at
+  - revoked_at nullable
+
+- payments
+  - id
+  - provider
+  - provider_customer_id
+  - provider_checkout_session_id
+  - provider_payment_id
+  - user_id
+  - amount
+  - currency
+  - status
+  - raw_event_id for idempotency
+  - created_at
+
+Rules:
+
+- The server, not the client, decides whether a user has Party Pass.
+- The room creator must be authenticated and entitled to create a 3+ room.
+- Guests can join premium rooms anonymously via invite link unless abuse pushes
+  the product toward logged-in guests.
+- Webhook handling must be idempotent. Replaying the same payment event must
+  not grant duplicate entitlements or corrupt payment state.
+- Refunds or chargebacks should set entitlement status to refunded/revoked.
+
+
+3+ Player Game Mode
+-------------------
+The first paid game mode should still be cooperative. That preserves the current
+game-over rule: if any snake loses, the team loses. PvP can come later.
+
+Suggested modes:
+
+- Party Co-op:
+  - 3 to 6 players.
+  - Same core rules as two-player co-op.
+  - Bigger board and more food.
+  - Separate leaderboard by player count bucket.
+
+- Party Chaos:
+  - 3 to 6 players.
+  - Optional modifiers: faster ticks, portals, shrinking board, bonus food,
+    reverse controls for one tick, shared lives.
+  - Better as an experimental mode after Party Co-op is stable.
+
+- Spectator Mode:
+  - Non-playing viewers can join the room.
+  - Useful for streaming, debugging, and waiting for a rematch.
+  - Should not require paid access.
+
+Technical changes for 3+:
+
+- Replace MaxPlayersPerRoom = 2 with room mode/capacity configuration.
+- Add createRoom payload fields:
+  - mode
+  - maxPlayers
+  - isPrivate or invite-only later
+- Room status should move to ReadyCheck when minimum players are present, not
+  only when exactly two seats are filled.
+- Add "lock room" behavior so the host can start with 3 of 6 seats filled.
+- Seat assignment should search 1..room.MaxPlayers.
+- Ready/start should require all currently seated connected players to be ready,
+  plus host start when min players are satisfied.
+- Spawn placement needs a real N-player algorithm:
+  - distribute snakes around the board perimeter or on a circle,
+  - point initial directions away from edges and away from each other,
+  - assert no overlapping bodies,
+  - scale starting length and board size by player count.
+- Add domain tests for 3, 4, 5, and 6 snakes:
+  - initial state creation,
+  - deterministic food spawn per owner,
+  - simultaneous collisions,
+  - length depleted,
+  - state hash stability,
+  - rollback with multiple late inputs.
+- Frontend room UI must render N seats without awkward overflow.
+- Game canvas colors need a palette for at least 6 players.
+- Touch/keyboard local input remains one local player, so that part does not
+  become much more complex.
+
+
+Persistence And Infrastructure
+------------------------------
+The deployment docs already call out the next stateful needs: database, Redis,
+player accounts, analytics, and secrets. Suggested path:
+
+- Add PostgreSQL first.
+  - Accounts.
+  - Entitlements.
+  - Payments.
+  - Match summaries.
+  - Leaderboard entries.
+
+- Add Redis only when needed.
+  - Multi-node room directory.
+  - Rate-limit counters.
+  - Short-lived auth/session lookup.
+  - Presence across multiple backend instances.
+
+- Keep active match state in memory.
+  - Do not put per-tick simulation in Postgres.
+  - Do not put the hot rollback loop behind Kafka.
+  - Emit summary events after match finish for persistence.
+
+- Add a background queue inside the backend first.
+  - MatchFinished -> persist summary -> update leaderboard.
+  - PaymentWebhookReceived -> verify -> upsert payment -> grant/revoke
+    entitlement.
+
+- Revisit Kafka or a managed event stream only after:
+  - there is enough volume to need it,
+  - analytics/replay requirements are real,
+  - multiple backend instances are running.
+
+
+Suggested Implementation Sequence
+---------------------------------
+Phase 1: Free MVP hardening
+
+- Finish WebSocket protocol and two-player flow.
+- Add browser smoke tests.
+- Add production logging/metrics.
+- Add rate limits and public-player safety controls.
+- Polish mobile and rematch UX.
+
+Phase 2: Persistence without accounts
+
+- Add PostgreSQL and migrations.
+- Persist match summaries from server-authoritative game results.
+- Add internal admin/query endpoint or script for inspecting matches.
+- Add daily/weekly/all-time leaderboard API using anonymous team names.
+
+Phase 3: Lightweight accounts
+
+- Add users and auth sessions.
+- Let a user claim display name.
+- Attach authenticated user id to WebSocket connection.
+- Let logged-in users claim match history when they hosted or participated.
+
+Phase 4: Payments and Party Pass
+
+- Pick Stripe or Paddle.
+- Add checkout creation endpoint.
+- Add webhook endpoint with signature verification and idempotency.
+- Add entitlements.
+- Add "create 3+ room" entitlement check.
+- Add account recovery and payment support path.
+
+Phase 5: 3+ Party Co-op
+
+- Add room capacity and room mode.
+- Add N-player room UI.
+- Add N-player spawn generation.
+- Add 3-6 player game engine tests.
+- Add mode-specific leaderboard.
+- Load test WebSocket fanout with 6 players per room.
+
+Phase 6: Social and retention features
+
+- Friend rematch links.
+- Team names.
+- Seasonal boards.
+- Replays from input timeline and seed.
+- Spectator mode.
+- Cosmetics and themes.
+- Public matchmaking if private rooms are not enough.
+
+
+Risks And Product Decisions To Make
+-----------------------------------
+Open decisions:
+
+- Should the $5 Party Pass be host-only, or should every 3+ player need it?
+  Recommendation: host-only.
+
+- Should leaderboard scores require all players to be logged in?
+  Recommendation: no for team scores, yes for career/user-specific stats.
+
+- Should 3+ mode be co-op only?
+  Recommendation: yes for the first paid mode. PvP creates extra design and
+  fairness questions.
+
+- Should the product start with $5 or $9?
+  Recommendation: start with $5 for friendliness, but consider a $9 Founder
+  Pass if payment/tax/admin overhead makes $5 feel too thin.
+
+Main risks:
+
+- Charging before retention is proven can add support burden before the game is
+  sticky.
+- Lifetime access is user-friendly but caps revenue.
+- Account creation can hurt the "send link and play" loop if guests are forced
+  to sign in.
+- Global tax handling can become more work than the game feature itself.
+- Public leaderboards need moderation, abuse controls, and clear scoring rules.
+- 3+ player rooms increase fanout, UI complexity, spawn complexity, and
+  disconnect edge cases.
+
+
+Near-Term Recommendation
+------------------------
+Do not make paid mode the next sprint. Make the next sprint "shareable MVP":
+two-player gameplay, rematch, reconnect, mobile input, smoke tests, and basic
+production observability.
+
+Immediately after that, add match summaries and leaderboards. That gives the
+game persistence and retention without forcing accounts too early.
+
+Then add optional accounts and a host-only Party Pass. Once account entitlement
+checks are in place, 3+ room creation becomes a clean product gate rather than a
+fragile client-side toggle.

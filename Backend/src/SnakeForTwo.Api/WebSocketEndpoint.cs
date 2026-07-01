@@ -15,17 +15,23 @@ internal sealed class WebSocketEndpoint
     private readonly IRoomCoordinator _roomCoordinator;
     private readonly WebSocketConnectionRegistry _connections;
     private readonly TimeProvider _timeProvider;
+    private readonly WebSocketRateLimitOptions _rateLimitOptions;
+    private readonly IGameMetrics _metrics;
     private readonly ILogger<WebSocketEndpoint> _logger;
 
     public WebSocketEndpoint(
         IRoomCoordinator roomCoordinator,
         WebSocketConnectionRegistry connections,
         TimeProvider timeProvider,
+        Microsoft.Extensions.Options.IOptions<WebSocketRateLimitOptions> rateLimitOptions,
+        IGameMetrics metrics,
         ILogger<WebSocketEndpoint> logger)
     {
         _roomCoordinator = roomCoordinator;
         _connections = connections;
         _timeProvider = timeProvider;
+        _rateLimitOptions = rateLimitOptions.Value;
+        _metrics = metrics;
         _logger = logger;
     }
 
@@ -112,6 +118,7 @@ internal sealed class WebSocketEndpoint
         CancellationToken cancellationToken)
     {
         var malformedMessages = 0;
+        var rateLimiter = new WebSocketMessageRateLimiter(_rateLimitOptions, _timeProvider);
 
         while (connection.Socket.State == WebSocketState.Open && !cancellationToken.IsCancellationRequested)
         {
@@ -122,6 +129,7 @@ internal sealed class WebSocketEndpoint
             }
             catch (ClientProtocolException exception)
             {
+                _metrics.RecordMalformedMessage();
                 _logger.LogWarning(
                     exception,
                     "Closing WebSocket connection {ConnectionId} after protocol violation.",
@@ -155,9 +163,19 @@ internal sealed class WebSocketEndpoint
                 return;
             }
 
-            var outcome = await HandleClientMessageAsync(connection.ConnectionId, message, CancellationToken.None);
+            var outcome = await HandleClientMessageAsync(
+                connection.ConnectionId,
+                message,
+                rateLimiter,
+                CancellationToken.None);
+            if (outcome == ClientMessageOutcome.Closed)
+            {
+                return;
+            }
+
             if (outcome == ClientMessageOutcome.Malformed)
             {
+                _metrics.RecordMalformedMessage();
                 malformedMessages++;
                 if (malformedMessages >= MaxMalformedMessages)
                 {
@@ -179,6 +197,7 @@ internal sealed class WebSocketEndpoint
     private async ValueTask<ClientMessageOutcome> HandleClientMessageAsync(
         string connectionId,
         string message,
+        WebSocketMessageRateLimiter rateLimiter,
         CancellationToken cancellationToken)
     {
         JsonDocument document;
@@ -207,6 +226,26 @@ internal sealed class WebSocketEndpoint
                     connectionId,
                     new ErrorMessage("malformedMessage", "Client message is missing a string type."));
                 return ClientMessageOutcome.Malformed;
+            }
+
+            var rateLimit = rateLimiter.Check(type);
+            if (!rateLimit.IsAllowed)
+            {
+                var reason = rateLimit.Reason ?? "Client message rate limit exceeded.";
+                _logger.LogWarning(
+                    "Closing WebSocket connection {ConnectionId} after rate limit violation. Reason: {Reason}",
+                    connectionId,
+                    reason);
+                await _connections.SendAsync(
+                    connectionId,
+                    new ErrorMessage("rateLimited", reason));
+                _metrics.RecordRateLimitedMessage();
+                await _connections.CloseAsync(
+                    connectionId,
+                    WebSocketCloseStatus.PolicyViolation,
+                    reason,
+                    CancellationToken.None);
+                return ClientMessageOutcome.Closed;
             }
 
             RoomCommandResult result;
@@ -424,7 +463,8 @@ internal sealed class WebSocketEndpoint
     private enum ClientMessageOutcome
     {
         Handled,
-        Malformed
+        Malformed,
+        Closed
     }
 
     private sealed class ClientProtocolException : Exception

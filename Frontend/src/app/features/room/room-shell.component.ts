@@ -50,15 +50,15 @@ import { RoomFacade } from './room.facade';
           </section>
         }
 
-        @if (vm.gamePhase === 'running' || vm.gamePhase === 'finished') {
+        @if (vm.gamePhase === 'running' || (vm.gamePhase === 'finished' && !vm.showGameOver)) {
           <app-game-controls [enabled]="vm.isGameRunning" />
         }
 
         <app-game-over-dialog
           [open]="vm.showGameOver"
           [result]="vm.gameResult"
-          (ready)="facade.readyForRematch()"
-          (dismiss)="facade.dismissGameOver()"
+          (tryAgain)="facade.tryAgain()"
+          (leaveRoom)="facade.leaveRoom()"
         />
       }
     </main>

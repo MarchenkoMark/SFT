@@ -55,6 +55,7 @@ export interface GameStateProjectionOptions {
 
 export function buildGameBoardRenderModel(input: GameBoardRenderInput): GameBoardRenderModel {
   const colorsByPlayer = buildColorMap(input.state.snakes, input.snakeColors);
+  const tileAlpha = input.state.status === 'Running' ? input.tileAlpha : 0;
 
   return {
     board: input.state.board,
@@ -65,7 +66,7 @@ export function buildGameBoardRenderModel(input: GameBoardRenderInput): GameBoar
       alive: snake.alive,
       isLocal: snake.playerId === input.localPlayerId,
       color: colorsByPlayer.get(snake.playerId) ?? fallbackFoodColor,
-      segments: projectSnakeSegments(snake, input.tileAlpha, input.state.board),
+      segments: projectSnakeSegments(snake, snake.alive ? tileAlpha : 0, input.state.board),
     })),
     food: input.state.food.map((food) => ({
       ...food,

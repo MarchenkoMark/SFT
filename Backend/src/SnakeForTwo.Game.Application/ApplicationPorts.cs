@@ -20,6 +20,27 @@ public interface IRoomLifecycleLogger
     void GameEnded(string roomId, string matchId, string result, string reason);
 }
 
+public interface IGameMetrics
+{
+    void ObserveRoomInventory(int roomCount, int activeMatchCount);
+
+    void RecordDisconnect();
+
+    void RecordInputLatency(long latencyMs);
+
+    void RecordStaleInput();
+
+    void RecordRollbackDepth(long rollbackDepthTicks);
+
+    void RecordCorrections(int correctionCount);
+
+    void RecordTickDuration(double durationMs, bool overran);
+
+    void RecordMalformedMessage();
+
+    void RecordRateLimitedMessage();
+}
+
 public sealed class NullRoomLifecycleLogger : IRoomLifecycleLogger
 {
     public static NullRoomLifecycleLogger Instance { get; } = new();
@@ -49,6 +70,51 @@ public sealed class NullRoomLifecycleLogger : IRoomLifecycleLogger
     }
 
     public void GameEnded(string roomId, string matchId, string result, string reason)
+    {
+    }
+}
+
+public sealed class NullGameMetrics : IGameMetrics
+{
+    public static NullGameMetrics Instance { get; } = new();
+
+    private NullGameMetrics()
+    {
+    }
+
+    public void ObserveRoomInventory(int roomCount, int activeMatchCount)
+    {
+    }
+
+    public void RecordDisconnect()
+    {
+    }
+
+    public void RecordInputLatency(long latencyMs)
+    {
+    }
+
+    public void RecordStaleInput()
+    {
+    }
+
+    public void RecordRollbackDepth(long rollbackDepthTicks)
+    {
+    }
+
+    public void RecordCorrections(int correctionCount)
+    {
+    }
+
+    public void RecordTickDuration(double durationMs, bool overran)
+    {
+    }
+
+    public void RecordMalformedMessage()
+    {
+    }
+
+    public void RecordRateLimitedMessage()
     {
     }
 }

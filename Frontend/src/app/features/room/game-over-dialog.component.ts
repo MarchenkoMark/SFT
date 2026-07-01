@@ -12,8 +12,8 @@ import { GameResult } from '../game/state/game-session.store';
           <p>{{ result.result }}</p>
           <p class="muted">{{ result.reason }}</p>
           <div class="actions">
-            <button type="button" (click)="ready.emit()">Ready for rematch</button>
-            <button type="button" (click)="dismiss.emit()">Dismiss</button>
+            <button type="button" (click)="tryAgain.emit()">Try again</button>
+            <button type="button" (click)="leaveRoom.emit()">Leave room</button>
           </div>
         </section>
       </div>
@@ -26,7 +26,7 @@ import { GameResult } from '../game/state/game-session.store';
       display: grid;
       place-items: center;
       padding: 24px;
-      background: rgb(0 0 0 / 0.24);
+      background: rgb(244 247 242 / 0.96);
     }
 
     .dialog {
@@ -65,6 +65,6 @@ import { GameResult } from '../game/state/game-session.store';
 export class GameOverDialogComponent {
   @Input() open = false;
   @Input() result: GameResult | null = null;
-  @Output() readonly ready = new EventEmitter<void>();
-  @Output() readonly dismiss = new EventEmitter<void>();
+  @Output() readonly tryAgain = new EventEmitter<void>();
+  @Output() readonly leaveRoom = new EventEmitter<void>();
 }

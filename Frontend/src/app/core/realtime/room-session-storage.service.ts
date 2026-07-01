@@ -3,15 +3,31 @@ import { Injectable } from '@angular/core';
 @Injectable({ providedIn: 'root' })
 export class RoomSessionStorageService {
   getToken(roomId: string): string | null {
-    return window.sessionStorage.getItem(this.key(roomId));
+    const key = this.key(roomId);
+    const persistentToken = window.localStorage.getItem(key);
+    if (persistentToken) {
+      return persistentToken;
+    }
+
+    const legacySessionToken = window.sessionStorage.getItem(key);
+    if (legacySessionToken) {
+      this.saveToken(roomId, legacySessionToken);
+      return legacySessionToken;
+    }
+
+    return null;
   }
 
   saveToken(roomId: string, token: string): void {
-    window.sessionStorage.setItem(this.key(roomId), token);
+    const key = this.key(roomId);
+    window.localStorage.setItem(key, token);
+    window.sessionStorage.removeItem(key);
   }
 
   clearToken(roomId: string): void {
-    window.sessionStorage.removeItem(this.key(roomId));
+    const key = this.key(roomId);
+    window.localStorage.removeItem(key);
+    window.sessionStorage.removeItem(key);
   }
 
   private key(roomId: string): string {

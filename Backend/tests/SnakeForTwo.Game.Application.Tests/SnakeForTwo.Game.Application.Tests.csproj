@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\SnakeForTwo.Game.Application\SnakeForTwo.Game.Application.csproj" />
+    <ProjectReference Include="..\..\src\SnakeForTwo.Api\SnakeForTwo.Api.csproj" />
     <ProjectReference Include="..\..\src\SnakeForTwo.Game.Domain\SnakeForTwo.Game.Domain.csproj" />
     <ProjectReference Include="..\..\src\SnakeForTwo.Contracts\SnakeForTwo.Contracts.csproj" />
   </ItemGroup>

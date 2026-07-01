@@ -24,9 +24,12 @@ builder.Services.AddCors(options =>
 builder.Services.AddSingleton<IRoomLifecycleLogger, RoomLifecycleLogger>();
 builder.Services.Configure<GameRuntimeOptions>(
     builder.Configuration.GetSection(GameRuntimeOptions.SectionName));
+builder.Services.Configure<WebSocketRateLimitOptions>(
+    builder.Configuration.GetSection(WebSocketRateLimitOptions.SectionName));
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.AddSingleton<IRoomIdentityProvider, SecureRoomIdentityProvider>();
 builder.Services.AddSingleton<IGameEventPublisher, InMemoryGameEventPublisher>();
+builder.Services.AddSingleton<IGameMetrics, GameMetrics>();
 builder.Services.AddSingleton<IRoomCoordinator>(serviceProvider =>
 {
     var options = serviceProvider
@@ -35,8 +38,9 @@ builder.Services.AddSingleton<IRoomCoordinator>(serviceProvider =>
     var identityProvider = serviceProvider.GetRequiredService<IRoomIdentityProvider>();
     var timeProvider = serviceProvider.GetRequiredService<TimeProvider>();
     var lifecycleLogger = serviceProvider.GetRequiredService<IRoomLifecycleLogger>();
+    var metrics = serviceProvider.GetRequiredService<IGameMetrics>();
 
-    return new GameRoomCoordinator(options, identityProvider, timeProvider, lifecycleLogger);
+    return new GameRoomCoordinator(options, identityProvider, timeProvider, lifecycleLogger, metrics);
 });
 builder.Services.AddSingleton<WebSocketConnectionRegistry>();
 builder.Services.AddSingleton<WebSocketEndpoint>();

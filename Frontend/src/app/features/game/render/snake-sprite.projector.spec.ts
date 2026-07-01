@@ -22,6 +22,31 @@ describe('snake sprite projector', () => {
     ]);
   });
 
+  it('freezes finished game states instead of replaying the final movement', () => {
+    const state: AuthoritativeGameState = {
+      board: { width: 16, height: 12 },
+      status: 'Finished',
+      snakes: [
+        createSnake('player-1', 'Right', [
+          { x: 5, y: 4 },
+          { x: 4, y: 4 },
+        ]),
+      ],
+      food: [],
+    };
+
+    const model = buildGameBoardRenderModel({
+      state,
+      localPlayerId: 'player-1',
+      tileAlpha: 0.6,
+    });
+
+    expect(model.snakes[0].segments).toEqual([
+      { x: 5, y: 4 },
+      { x: 4, y: 4 },
+    ]);
+  });
+
   it('predicts a stale authoritative frame forward to the render tick', () => {
     const state: AuthoritativeGameState = {
       board: { width: 16, height: 12 },

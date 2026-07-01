@@ -131,10 +131,6 @@ export class GameSessionStore extends Store<GameSessionState> {
     }));
   }
 
-  hideGameOver(): void {
-    this.update({ showGameOver: false });
-  }
-
   resetSession(): void {
     this.update(initialState);
   }

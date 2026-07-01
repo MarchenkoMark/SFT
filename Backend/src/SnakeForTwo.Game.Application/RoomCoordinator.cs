@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using SnakeForTwo.Contracts;
 using SnakeForTwo.Game.Domain;
 
@@ -67,7 +68,8 @@ public sealed class GameRoomCoordinator(
     GameRuntimeOptions options,
     IRoomIdentityProvider identityProvider,
     TimeProvider? timeProvider = null,
-    IRoomLifecycleLogger? lifecycleLogger = null)
+    IRoomLifecycleLogger? lifecycleLogger = null,
+    IGameMetrics? metrics = null)
     : IRoomCoordinator
 {
     private const int MaxPlayersPerRoom = 2;
@@ -78,6 +80,7 @@ public sealed class GameRoomCoordinator(
     private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly IRoomLifecycleLogger _lifecycleLogger =
         lifecycleLogger ?? NullRoomLifecycleLogger.Instance;
+    private readonly IGameMetrics _metrics = metrics ?? NullGameMetrics.Instance;
 
     public RoomCommandResult CreateRoom(string connectionId)
     {
@@ -101,6 +104,7 @@ public sealed class GameRoomCoordinator(
             _rooms.Add(room.Id, room);
             _connections[connectionId] = new PlayerLocation(room.Id, player.PlayerId);
             _lifecycleLogger.RoomCreated(room.Id, player.PlayerId, connectionId);
+            ObserveRoomInventoryLocked();
 
             var state = ToRoomState(room);
             return RoomCommandResult.ToConnection(
@@ -160,6 +164,7 @@ public sealed class GameRoomCoordinator(
 
             _connections[connectionId] = new PlayerLocation(room.Id, player.PlayerId);
             _lifecycleLogger.RoomJoined(room.Id, player.PlayerId, connectionId);
+            ObserveRoomInventoryLocked();
 
             var state = ToRoomState(room);
             var messages = new List<OutboundServerMessage>
@@ -326,11 +331,14 @@ public sealed class GameRoomCoordinator(
                     room.Id);
             }
 
+            _metrics.RecordInputLatency(Math.Max(0, serverReceivedAt - input.ClientTime));
+
             var targetTick = EstimateInputTargetTick(room.Match, input, serverReceivedAt);
             var inputResult = room.Match.Session.SubmitInput(
                 new PlayerId(player.PlayerId),
                 targetTick,
                 ToDomainDirection(input.Direction));
+            RecordInputSchedulingMetrics(room.Match.Session, inputResult);
 
             var messages = new List<OutboundServerMessage>();
             if (inputResult is
@@ -386,10 +394,12 @@ public sealed class GameRoomCoordinator(
             if (room.Players.Count == 0)
             {
                 _rooms.Remove(room.Id);
+                ObserveRoomInventoryLocked();
                 return Result(messages);
             }
 
             NormalizeRoomStatusAfterRosterChange(room);
+            ObserveRoomInventoryLocked();
             messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
 
             return Result(messages);
@@ -422,6 +432,7 @@ public sealed class GameRoomCoordinator(
             player.IsConnected = false;
             player.DisconnectedAt = _timeProvider.GetUtcNow();
             _lifecycleLogger.PlayerDisconnected(room.Id, player.PlayerId, connectionId);
+            _metrics.RecordDisconnect();
 
             if (room.Status != RoomStatusDto.InGame)
             {
@@ -468,6 +479,7 @@ public sealed class GameRoomCoordinator(
                     room.Match.Session = CreateGameSession(room, room.Match);
                     room.Status = RoomStatusDto.InGame;
                     _lifecycleLogger.GameStarted(room.Id, room.Match.MatchId);
+                    ObserveRoomInventoryLocked();
                     messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
 
                     foreach (var player in room.Players.Where(candidate => candidate.ConnectionId is not null))
@@ -492,7 +504,12 @@ public sealed class GameRoomCoordinator(
                     while (NextFrameServerTime(room.Match) <= now &&
                         room.Match.Session.CurrentState.Status == GameStatus.Running)
                     {
+                        var tickStarted = Stopwatch.GetTimestamp();
                         var frame = room.Match.Session.AdvanceOneTick();
+                        var tickDuration = Stopwatch.GetElapsedTime(tickStarted);
+                        _metrics.RecordTickDuration(
+                            tickDuration.TotalMilliseconds,
+                            tickDuration > options.TickDuration);
                         messages.Add(Broadcast(room, ToAuthoritativeFrameMessage(room, frame)));
                     }
 
@@ -516,6 +533,7 @@ public sealed class GameRoomCoordinator(
                 RemoveExpiredDisconnectedPlayersLocked(room, now, messages);
             }
 
+            ObserveRoomInventoryLocked();
             return Result(messages);
         }
     }
@@ -570,6 +588,7 @@ public sealed class GameRoomCoordinator(
         {
             _lifecycleLogger.GameEnded(room.Id, match.MatchId, result, reason);
         }
+        ObserveRoomInventoryLocked();
 
         messages.Add(Broadcast(
             room,
@@ -634,11 +653,41 @@ public sealed class GameRoomCoordinator(
         if (room.Players.Count == 0)
         {
             _rooms.Remove(room.Id);
+            ObserveRoomInventoryLocked();
             return;
         }
 
         NormalizeRoomStatusAfterRosterChange(room);
+        ObserveRoomInventoryLocked();
         messages.Add(Broadcast(room, new RoomStateMessage(ToRoomState(room))));
+    }
+
+    private void RecordInputSchedulingMetrics(
+        RollbackGameSession session,
+        GameInputResult inputResult)
+    {
+        if (inputResult.Status == InputSchedulingStatus.RejectedStale)
+        {
+            _metrics.RecordStaleInput();
+        }
+
+        if (inputResult is { RolledBack: true, RollbackFromTick: not null })
+        {
+            _metrics.RecordRollbackDepth(
+                Math.Max(0, session.CurrentTick.Value - inputResult.RollbackFromTick.Value.Value));
+        }
+
+        if (inputResult.Corrections.Count > 0)
+        {
+            _metrics.RecordCorrections(inputResult.Corrections.Count);
+        }
+    }
+
+    private void ObserveRoomInventoryLocked()
+    {
+        _metrics.ObserveRoomInventory(
+            _rooms.Count,
+            _rooms.Values.Count(room => room.Status == RoomStatusDto.InGame));
     }
 
     private static SnakeSpawn CreateSnakeSpawn(PlayerRecord player, GameRules rules)

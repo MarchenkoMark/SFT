@@ -3,17 +3,22 @@ import {
   ChangeDetectionStrategy,
   Component,
   ElementRef,
+  Injector,
   NgZone,
   OnDestroy,
   ViewChild,
 } from '@angular/core';
 
 import { ClockSyncService } from '../../../core/clock/clock-sync.service';
-import { computeRenderPhase } from '../netcode/render-clock';
+import { RenderDiagnosticsReporterService } from '../diagnostics/render-diagnostics-reporter.service';
+import { RenderDiagnosticsSettingsService } from '../diagnostics/render-diagnostics-settings.service';
+import { computeRenderPhase, RenderPhase } from '../netcode/render-clock';
 import { GameSessionQuery } from '../state/game-session.query';
-import { StoredAuthoritativeFrame } from '../state/game-session.store';
+import { GameSessionState, StoredAuthoritativeFrame } from '../state/game-session.store';
 import { LocalPredictionStore } from '../state/local-prediction.store';
-import { CanvasGameRenderer } from './canvas-game-renderer.service';
+import { RenderFrameHistoryStore } from '../state/render-frame-history.store';
+import { GameFieldRenderer } from './game-field-renderer';
+import { PixiGameRenderer } from './pixi-game-renderer.service';
 import {
   blendGameBoardRenderModel,
   buildGameBoardRenderModel,
@@ -32,7 +37,7 @@ interface ActiveBlend {
   selector: 'app-game-board',
   template: `
     <section class="game-board-frame" aria-label="Snake field">
-      <canvas #canvas class="game-board-canvas" aria-label="Snake board"></canvas>
+      <div #rendererHost class="game-board-renderer" aria-label="Snake board"></div>
     </section>
   `,
   styles: `
@@ -52,7 +57,7 @@ interface ActiveBlend {
       background: #f4f7f2;
     }
 
-    .game-board-canvas {
+    .game-board-renderer {
       display: block;
       width: 100%;
       height: 100%;
@@ -65,13 +70,17 @@ interface ActiveBlend {
       }
     }
   `,
+  providers: [{ provide: GameFieldRenderer, useClass: PixiGameRenderer }],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class GameBoardComponent implements AfterViewInit, OnDestroy {
-  @ViewChild('canvas', { static: true })
-  private readonly canvasRef!: ElementRef<HTMLCanvasElement>;
+  @ViewChild('rendererHost', { static: true })
+  private readonly rendererHostRef!: ElementRef<HTMLElement>;
 
   private animationFrameId: number | null = null;
+  private resizeObserver: ResizeObserver | null = null;
+  private rendererMounted = false;
+  private destroyed = false;
   private lastDrawnModel: GameBoardRenderModel | null = null;
   private lastSeenFrame: Pick<StoredAuthoritativeFrame, 'revision' | 'tick' | 'stateHash'> | null =
     null;
@@ -81,21 +90,38 @@ export class GameBoardComponent implements AfterViewInit, OnDestroy {
     private readonly clockSync: ClockSyncService,
     private readonly gameSessionQuery: GameSessionQuery,
     private readonly localPredictionStore: LocalPredictionStore,
-    private readonly renderer: CanvasGameRenderer,
+    private readonly renderDiagnosticsReporter: RenderDiagnosticsReporterService,
+    private readonly renderDiagnosticsSettings: RenderDiagnosticsSettingsService,
+    private readonly renderer: GameFieldRenderer,
+    private readonly injector: Injector,
     private readonly zone: NgZone,
   ) {}
 
   ngAfterViewInit(): void {
     this.zone.runOutsideAngular(() => {
-      this.draw();
-      this.scheduleNextFrame();
+      void Promise.resolve(this.renderer.mount(this.rendererHostRef.nativeElement)).then(() => {
+        if (this.destroyed) {
+          return;
+        }
+
+        this.rendererMounted = true;
+        this.observeResize();
+        this.draw();
+        this.scheduleNextFrame();
+      });
     });
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
+
     if (this.animationFrameId !== null) {
       this.cancelAnimationFrame(this.animationFrameId);
     }
+
+    this.resizeObserver?.disconnect();
+    this.renderDiagnosticsReporter.sendPending('gameBoardDestroyed');
+    this.renderer.destroy();
   }
 
   private scheduleNextFrame(): void {
@@ -106,12 +132,19 @@ export class GameBoardComponent implements AfterViewInit, OnDestroy {
   }
 
   private draw(): void {
-    const canvas = this.canvasRef.nativeElement;
+    if (!this.rendererMounted) {
+      return;
+    }
+
     const session = this.gameSessionQuery.snapshot;
+    if (this.renderDiagnosticsSettings.enabled) {
+      this.syncRenderHistoryMatch(session);
+    }
+
     const latestFrame = session.latestFrame;
 
     if (!latestFrame) {
-      this.renderer.drawEmpty(canvas);
+      this.renderer.drawEmpty();
       this.lastDrawnModel = null;
       this.lastSeenFrame = null;
       this.activeBlend = null;
@@ -121,8 +154,9 @@ export class GameBoardComponent implements AfterViewInit, OnDestroy {
     const timing = session.timing;
     const tickDurationMs = timing?.tickDurationMs ?? 500;
     const animationFramesPerTile = timing?.animationFramesPerTile ?? 5;
+    const estimatedServerNow = this.clockSync.estimatedServerNow();
     const phase = computeRenderPhase({
-      estimatedServerNow: this.clockSync.estimatedServerNow(),
+      estimatedServerNow,
       matchStartServerTime: session.startServerTime ?? latestFrame.serverTime,
       tickDurationMs,
       animationFramesPerTile,
@@ -143,8 +177,87 @@ export class GameBoardComponent implements AfterViewInit, OnDestroy {
     });
     const modelToDraw = this.applyVisualReconciliation(targetModel, latestFrame);
 
-    this.renderer.draw(canvas, modelToDraw);
+    this.renderer.render(modelToDraw);
+    if (this.renderDiagnosticsSettings.enabled) {
+      this.recordRenderFrameHistory(session, latestFrame, phase, estimatedServerNow, modelToDraw);
+    }
     this.lastDrawnModel = modelToDraw;
+  }
+
+  private syncRenderHistoryMatch(session: GameSessionState): void {
+    if (!session.matchId) {
+      return;
+    }
+
+    this.injector.get(RenderFrameHistoryStore).beginMatch({
+      roomId: session.roomId,
+      matchId: session.matchId,
+      startedAt: session.startServerTime ?? Date.now(),
+    });
+  }
+
+  private recordRenderFrameHistory(
+    session: GameSessionState,
+    latestFrame: StoredAuthoritativeFrame,
+    phase: RenderPhase,
+    estimatedServerNow: number,
+    model: GameBoardRenderModel,
+  ): void {
+    const authoritativeSnakes = new Map(
+      latestFrame.state.snakes.map((snake) => [snake.playerId, snake]),
+    );
+
+    const renderFrameHistoryStore = this.injector.get(RenderFrameHistoryStore);
+
+    renderFrameHistoryStore.recordFrame({
+      capturedAt: Date.now(),
+      performanceTime: this.now(),
+      roomId: session.roomId,
+      matchId: session.matchId,
+      localPlayerId: session.localPlayerId,
+      latestFrameTick: latestFrame.tick,
+      latestFrameRevision: latestFrame.revision,
+      latestFrameSource: latestFrame.source,
+      latestFrameServerTime: latestFrame.serverTime,
+      latestFrameReceivedAt: latestFrame.receivedAt,
+      latestFrameStateHash: latestFrame.stateHash,
+      estimatedServerNow,
+      renderContinuousTick: phase.continuousTick,
+      renderTick: phase.currentTick,
+      tileAlpha: phase.tileAlpha,
+      quantizedTileAlpha: phase.quantizedTileAlpha,
+      snakes: model.snakes.map((snake) => {
+        const authoritativeSnake = authoritativeSnakes.get(snake.playerId);
+        const projectedHead = snake.segments[0] ?? null;
+
+        return {
+          playerId: snake.playerId,
+          isLocal: snake.isLocal,
+          alive: snake.alive,
+          direction: snake.direction,
+          projectedHead: projectedHead ? { x: projectedHead.x, y: projectedHead.y } : null,
+          segmentCount: snake.segments.length,
+          authoritativeHead: authoritativeSnake?.head ?? null,
+          authoritativeDirection: authoritativeSnake?.direction ?? null,
+          authoritativeAlive: authoritativeSnake?.alive ?? null,
+          authoritativeBodyLength: authoritativeSnake?.body.length ?? null,
+        };
+      }),
+    });
+
+    if (session.phase === 'finished' || latestFrame.state.status === 'Finished') {
+      renderFrameHistoryStore.finishMatch(Date.now());
+    }
+  }
+
+  private observeResize(): void {
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.renderer.resize());
+      this.resizeObserver.observe(this.rendererHostRef.nativeElement);
+      return;
+    }
+
+    this.renderer.resize();
   }
 
   private applyVisualReconciliation(

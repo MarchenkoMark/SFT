@@ -3,6 +3,7 @@ import { RouterOutlet } from '@angular/router';
 
 import { AccountPanelComponent } from './core/account/account-panel.component';
 import { ServerMessageDispatcherService } from './core/realtime/server-message-dispatcher.service';
+import { RenderDiagnosticsSettingsService } from './features/game/diagnostics/render-diagnostics-settings.service';
 import { LeaderboardPanelComponent } from './features/leaderboard/leaderboard-panel.component';
 
 @Component({
@@ -14,8 +15,10 @@ import { LeaderboardPanelComponent } from './features/leaderboard/leaderboard-pa
 })
 export class App {
   private readonly dispatcher = inject(ServerMessageDispatcherService);
+  private readonly renderDiagnosticsSettings = inject(RenderDiagnosticsSettingsService);
 
   constructor() {
+    this.renderDiagnosticsSettings.refreshFromCurrentUrl();
     this.dispatcher.start();
   }
 }

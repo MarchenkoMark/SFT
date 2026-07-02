@@ -18,6 +18,12 @@ internal sealed class GameMetrics : IGameMetrics, IDisposable
     private readonly Counter<long> _tickOverruns;
     private readonly Counter<long> _malformedMessages;
     private readonly Counter<long> _rateLimitedMessages;
+    private readonly Counter<long> _renderDiagnosticsBatches;
+    private readonly Histogram<long> _renderDiagnosticsBatchFrames;
+    private readonly Histogram<long> _renderDiagnosticsRenderTickDelta;
+    private readonly Histogram<double> _renderDiagnosticsFrameServerLeadMs;
+    private readonly Histogram<double> _renderDiagnosticsReceivedFrameLeadMs;
+    private readonly Histogram<double> _renderDiagnosticsEstimatedServerOffsetMs;
     private int _roomCount;
     private int _activeMatchCount;
 
@@ -69,6 +75,30 @@ internal sealed class GameMetrics : IGameMetrics, IDisposable
             "snakefortwo.websocket.rate_limited_messages",
             unit: "{message}",
             description: "WebSocket client messages rejected by rate limits.");
+        _renderDiagnosticsBatches = _meter.CreateCounter<long>(
+            "snakefortwo.render_diagnostics.batches",
+            unit: "{batch}",
+            description: "Client render diagnostics batches received.");
+        _renderDiagnosticsBatchFrames = _meter.CreateHistogram<long>(
+            "snakefortwo.render_diagnostics.batch_frames",
+            unit: "{frame}",
+            description: "Frames included in client render diagnostics batches.");
+        _renderDiagnosticsRenderTickDelta = _meter.CreateHistogram<long>(
+            "snakefortwo.render_diagnostics.render_tick_delta",
+            unit: "{tick}",
+            description: "Client render tick minus latest authoritative frame tick.");
+        _renderDiagnosticsFrameServerLeadMs = _meter.CreateHistogram<double>(
+            "snakefortwo.render_diagnostics.frame_server_lead",
+            unit: "ms",
+            description: "Latest frame server time minus client estimated server time.");
+        _renderDiagnosticsReceivedFrameLeadMs = _meter.CreateHistogram<double>(
+            "snakefortwo.render_diagnostics.received_frame_lead",
+            unit: "ms",
+            description: "Latest frame server time minus client frame receipt time.");
+        _renderDiagnosticsEstimatedServerOffsetMs = _meter.CreateHistogram<double>(
+            "snakefortwo.render_diagnostics.estimated_server_offset",
+            unit: "ms",
+            description: "Client estimated server time minus client wall-clock capture time.");
     }
 
     public void ObserveRoomInventory(int roomCount, int activeMatchCount)
@@ -106,6 +136,26 @@ internal sealed class GameMetrics : IGameMetrics, IDisposable
     public void RecordMalformedMessage() => _malformedMessages.Add(1);
 
     public void RecordRateLimitedMessage() => _rateLimitedMessages.Add(1);
+
+    public void RecordRenderDiagnosticsBatch(int frameCount, string reason)
+    {
+        var tags = new KeyValuePair<string, object?>("reason", reason);
+
+        _renderDiagnosticsBatches.Add(1, tags);
+        _renderDiagnosticsBatchFrames.Record(Math.Max(0, frameCount), tags);
+    }
+
+    public void RecordRenderDiagnosticsFrame(
+        long renderTickDelta,
+        double frameServerLeadMs,
+        double receivedFrameLeadMs,
+        double estimatedServerOffsetMs)
+    {
+        _renderDiagnosticsRenderTickDelta.Record(renderTickDelta);
+        _renderDiagnosticsFrameServerLeadMs.Record(frameServerLeadMs);
+        _renderDiagnosticsReceivedFrameLeadMs.Record(receivedFrameLeadMs);
+        _renderDiagnosticsEstimatedServerOffsetMs.Record(estimatedServerOffsetMs);
+    }
 
     public void Dispose() => _meter.Dispose();
 }

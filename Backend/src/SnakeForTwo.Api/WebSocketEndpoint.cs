@@ -9,7 +9,9 @@ namespace SnakeForTwo.Api;
 
 internal sealed class WebSocketEndpoint
 {
-    private const int MaxMessageBytes = 16 * 1024;
+    private const int MaxStandardMessageBytes = 16 * 1024;
+    private const int MaxMessageBytes = 4 * 1024 * 1024;
+    private const int MaxRenderDiagnosticsFrames = 4_000;
     private const int MaxMalformedMessages = 3;
 
     private readonly IRoomCoordinator _roomCoordinator;
@@ -233,6 +235,14 @@ internal sealed class WebSocketEndpoint
                 return ClientMessageOutcome.Malformed;
             }
 
+            if (!string.Equals(type, "renderDiagnostics", StringComparison.Ordinal) &&
+                Encoding.UTF8.GetByteCount(message) > MaxStandardMessageBytes)
+            {
+                return await SendMalformedAsync(
+                    connectionId,
+                    "Client message exceeded the maximum size.");
+            }
+
             var rateLimit = rateLimiter.Check(type);
             if (!rateLimit.IsAllowed)
             {
@@ -356,6 +366,9 @@ internal sealed class WebSocketEndpoint
                             sampleId));
                     return ClientMessageOutcome.Handled;
 
+                case "renderDiagnostics":
+                    return await HandleRenderDiagnosticsAsync(connectionId, document.RootElement);
+
                 default:
                     await _connections.SendAsync(
                         connectionId,
@@ -366,6 +379,131 @@ internal sealed class WebSocketEndpoint
             await _connections.DispatchAsync(result, cancellationToken);
             return ClientMessageOutcome.Handled;
         }
+    }
+
+    private async ValueTask<ClientMessageOutcome> HandleRenderDiagnosticsAsync(
+        string connectionId,
+        JsonElement root)
+    {
+        if (!TryGetString(root, "roomId", out var roomId) ||
+            !TryGetString(root, "matchId", out var matchId) ||
+            !TryGetString(root, "reason", out var reason) ||
+            !TryGetInt64(root, "clientSentAt", out var clientSentAt) ||
+            !TryGetInt32(root, "capturedWindowMs", out var capturedWindowMs) ||
+            !TryGetInt32(root, "totalRecordedFrameCount", out var totalRecordedFrameCount) ||
+            !TryGetInt32(root, "sentFrameCount", out var sentFrameCount) ||
+            !root.TryGetProperty("frames", out var framesElement) ||
+            framesElement.ValueKind != JsonValueKind.Array)
+        {
+            return await SendMalformedAsync(
+                connectionId,
+                "renderDiagnostics requires roomId, matchId, reason, clientSentAt, counts, and frames.");
+        }
+
+        var localPlayerId = TryGetOptionalString(root, "localPlayerId", out var parsedLocalPlayerId)
+            ? parsedLocalPlayerId
+            : null;
+        var frames = framesElement.EnumerateArray().ToArray();
+        if (frames.Length != sentFrameCount)
+        {
+            return await SendMalformedAsync(
+                connectionId,
+                "renderDiagnostics sentFrameCount must match frames length.");
+        }
+
+        if (frames.Length > MaxRenderDiagnosticsFrames)
+        {
+            return await SendMalformedAsync(
+                connectionId,
+                $"renderDiagnostics may include at most {MaxRenderDiagnosticsFrames} frames.");
+        }
+
+        var frameDiagnostics = new List<RenderDiagnosticsFrame>(frames.Length);
+        foreach (var frame in frames)
+        {
+            if (!TryReadRenderDiagnosticsFrame(frame, out var diagnosticFrame, out var error))
+            {
+                return await SendMalformedAsync(connectionId, error);
+            }
+
+            frameDiagnostics.Add(diagnosticFrame);
+        }
+
+        _metrics.RecordRenderDiagnosticsBatch(frames.Length, reason);
+        _logger.LogInformation(
+            "Render diagnostics batch received: connection {ConnectionId}, room {RoomId}, match {MatchId}, player {PlayerId}, reason {Reason}, frames {FrameCount}, total recorded {TotalRecordedFrameCount}, window {CapturedWindowMs}ms, client sent at {ClientSentAt}.",
+            connectionId,
+            roomId,
+            matchId,
+            localPlayerId,
+            reason,
+            frames.Length,
+            totalRecordedFrameCount,
+            capturedWindowMs,
+            clientSentAt);
+
+        foreach (var frame in frameDiagnostics)
+        {
+            _metrics.RecordRenderDiagnosticsFrame(
+                frame.RenderTickDelta,
+                frame.FrameServerLeadMs,
+                frame.ReceivedFrameLeadMs,
+                frame.EstimatedServerOffsetMs);
+            _logger.LogInformation(
+                "Render diagnostics frame: room {RoomId}, match {MatchId}, player {PlayerId}, reason {Reason}, frame {FrameIndex}, latest frame tick {LatestFrameTick}, render tick {RenderTick}, render tick delta {RenderTickDelta}, frame server lead {FrameServerLeadMs}ms, received frame lead {ReceivedFrameLeadMs}ms, estimated server offset {EstimatedServerOffsetMs}ms, alpha {QuantizedTileAlpha}, snakes {Snakes}.",
+                roomId,
+                matchId,
+                localPlayerId,
+                reason,
+                frame.FrameIndex,
+                frame.LatestFrameTick,
+                frame.RenderTick,
+                frame.RenderTickDelta,
+                frame.FrameServerLeadMs,
+                frame.ReceivedFrameLeadMs,
+                frame.EstimatedServerOffsetMs,
+                frame.QuantizedTileAlpha,
+                frame.SnakesJson);
+        }
+
+        return ClientMessageOutcome.Handled;
+    }
+
+    private static bool TryReadRenderDiagnosticsFrame(
+        JsonElement frame,
+        out RenderDiagnosticsFrame frameDiagnostics,
+        out string error)
+    {
+        frameDiagnostics = default;
+        error = "renderDiagnostics frame is missing required fields.";
+
+        if (frame.ValueKind != JsonValueKind.Object ||
+            !TryGetInt64(frame, "frameIndex", out var frameIndex) ||
+            !TryGetInt64(frame, "capturedAt", out var capturedAt) ||
+            !TryGetInt64(frame, "latestFrameTick", out var latestFrameTick) ||
+            !TryGetInt64(frame, "latestFrameServerTime", out var latestFrameServerTime) ||
+            !TryGetInt64(frame, "latestFrameReceivedAt", out var latestFrameReceivedAt) ||
+            !TryGetDouble(frame, "estimatedServerNow", out var estimatedServerNow) ||
+            !TryGetInt64(frame, "renderTick", out var renderTick) ||
+            !TryGetDouble(frame, "quantizedTileAlpha", out var quantizedTileAlpha) ||
+            !frame.TryGetProperty("snakes", out var snakesElement) ||
+            snakesElement.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        frameDiagnostics = new RenderDiagnosticsFrame(
+            frameIndex,
+            latestFrameTick,
+            renderTick,
+            renderTick - latestFrameTick,
+            latestFrameServerTime - estimatedServerNow,
+            latestFrameServerTime - latestFrameReceivedAt,
+            estimatedServerNow - capturedAt,
+            quantizedTileAlpha,
+            snakesElement.GetRawText());
+        error = "";
+        return true;
     }
 
     private async ValueTask<JsonDocument> ParseJsonAsync(string connectionId, string message)
@@ -473,6 +611,13 @@ internal sealed class WebSocketEndpoint
             property.TryGetInt32(out value);
     }
 
+    private static bool TryGetDouble(JsonElement root, string propertyName, out double value)
+    {
+        value = default;
+        return root.TryGetProperty(propertyName, out var property) &&
+            property.TryGetDouble(out value);
+    }
+
     private static bool TryGetDirection(JsonElement root, out DirectionDto direction)
     {
         direction = default;
@@ -523,4 +668,15 @@ internal sealed class WebSocketEndpoint
     private sealed class MalformedClientMessageException : Exception
     {
     }
+
+    private readonly record struct RenderDiagnosticsFrame(
+        long FrameIndex,
+        long LatestFrameTick,
+        long RenderTick,
+        long RenderTickDelta,
+        double FrameServerLeadMs,
+        double ReceivedFrameLeadMs,
+        double EstimatedServerOffsetMs,
+        double QuantizedTileAlpha,
+        string SnakesJson);
 }

@@ -228,6 +228,12 @@ describe('snake sprite projector', () => {
       defaultSnakeColors[1],
     ]);
     expect(model.snakes[0].isLocal).toBe(true);
+    expect(model.snakes[0].renderKey).toBe('snake:player-1');
+    expect(model.snakes[0].segmentKeys).toEqual([
+      'snake:player-1:segment:0',
+      'snake:player-1:segment:1',
+    ]);
+    expect(model.food[0].renderKey).toBe('food:player-2:7:3');
     expect(model.food[0].color).toBe(defaultSnakeColors[1]);
     expect(model.food[1].color).toBe('#6b7280');
   });

@@ -76,7 +76,8 @@ export type ClientMessage =
       clientTime: number;
       clientSequence: number;
     }
-  | { type: 'ping'; clientTime: number; sampleId: string };
+  | { type: 'ping'; clientTime: number; sampleId: string }
+  | RenderDiagnosticsClientMessage;
 
 export interface RoomCreatedMessage {
   type: 'roomCreated';
@@ -181,6 +182,54 @@ export interface PongMessage {
   clientTime: number;
   serverTime: number;
   sampleId: string;
+}
+
+export interface RenderDiagnosticsPoint {
+  x: number;
+  y: number;
+}
+
+export interface RenderDiagnosticsSnakeSample {
+  playerId: string;
+  isLocal: boolean;
+  alive: boolean;
+  direction: Direction;
+  projectedHead: RenderDiagnosticsPoint | null;
+  authoritativeHead: Cell | null;
+}
+
+export interface RenderDiagnosticsFrame {
+  frameIndex: number;
+  capturedAt: number;
+  performanceTime: number;
+  latestFrameTick: number;
+  latestFrameRevision: number;
+  latestFrameSource: string;
+  latestFrameServerTime: number;
+  latestFrameReceivedAt: number;
+  estimatedServerNow: number;
+  renderContinuousTick: number;
+  renderTick: number;
+  tileAlpha: number;
+  quantizedTileAlpha: number;
+  renderTickDelta: number;
+  frameServerLeadMs: number;
+  receivedFrameLeadMs: number;
+  estimatedServerOffsetMs: number;
+  snakes: RenderDiagnosticsSnakeSample[];
+}
+
+export interface RenderDiagnosticsClientMessage {
+  type: 'renderDiagnostics';
+  roomId: string;
+  matchId: string;
+  localPlayerId: string | null;
+  reason: string;
+  clientSentAt: number;
+  capturedWindowMs: number;
+  totalRecordedFrameCount: number;
+  sentFrameCount: number;
+  frames: RenderDiagnosticsFrame[];
 }
 
 export type ServerMessage =

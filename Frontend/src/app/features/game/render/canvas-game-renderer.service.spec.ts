@@ -17,10 +17,13 @@ describe('CanvasGameRenderer', () => {
         status: 'Running',
         snakes: [
           {
+            renderKey: 'snake:player-1',
             playerId: 'player-1',
             alive: true,
             color: defaultSnakeColors[0],
             isLocal: true,
+            direction: 'Right',
+            segmentKeys: ['snake:player-1:segment:0', 'snake:player-1:segment:1'],
             segments: [
               { x: 2.4, y: 3 },
               { x: 1.4, y: 3 },
@@ -29,6 +32,7 @@ describe('CanvasGameRenderer', () => {
         ],
         food: [
           {
+            renderKey: 'food:player-1:4:1',
             ownerPlayerId: 'player-1',
             cell: { x: 4, y: 1 },
             color: defaultSnakeColors[0],
@@ -67,10 +71,13 @@ describe('CanvasGameRenderer', () => {
         status: 'Running',
         snakes: [
           {
+            renderKey: 'snake:player-1',
             playerId: 'player-1',
             alive: true,
             color: defaultSnakeColors[0],
             isLocal: true,
+            direction: 'Right',
+            segmentKeys: ['snake:player-1:segment:0'],
             segments: [{ x: 7.4, y: 3 }],
           },
         ],

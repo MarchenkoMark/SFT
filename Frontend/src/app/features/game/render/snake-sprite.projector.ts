@@ -27,14 +27,18 @@ export interface GameBoardRenderInput {
 }
 
 export interface RenderSnake {
+  renderKey: string;
   playerId: string;
   alive: boolean;
   isLocal: boolean;
   color: string;
+  direction: AuthoritativeSnake['direction'];
   segments: ProjectedPoint[];
+  segmentKeys: string[];
 }
 
 export interface RenderFood {
+  renderKey: string;
   ownerPlayerId: string;
   cell: Cell;
   color: string;
@@ -61,14 +65,22 @@ export function buildGameBoardRenderModel(input: GameBoardRenderInput): GameBoar
     board: input.state.board,
     status: input.state.status,
     localPlayerId: input.localPlayerId,
-    snakes: input.state.snakes.map((snake) => ({
-      playerId: snake.playerId,
-      alive: snake.alive,
-      isLocal: snake.playerId === input.localPlayerId,
-      color: colorsByPlayer.get(snake.playerId) ?? fallbackFoodColor,
-      segments: projectSnakeSegments(snake, snake.alive ? tileAlpha : 0, input.state.board),
-    })),
+    snakes: input.state.snakes.map((snake) => {
+      const segments = projectSnakeSegments(snake, snake.alive ? tileAlpha : 0, input.state.board);
+
+      return {
+        renderKey: snakeRenderKey(snake.playerId),
+        playerId: snake.playerId,
+        alive: snake.alive,
+        isLocal: snake.playerId === input.localPlayerId,
+        color: colorsByPlayer.get(snake.playerId) ?? fallbackFoodColor,
+        direction: snake.direction,
+        segments,
+        segmentKeys: segments.map((_, index) => snakeSegmentRenderKey(snake.playerId, index)),
+      };
+    }),
     food: input.state.food.map((food) => ({
+      renderKey: foodRenderKey(food.ownerPlayerId, food.cell),
       ...food,
       color: colorsByPlayer.get(food.ownerPlayerId) ?? fallbackFoodColor,
     })),
@@ -181,6 +193,18 @@ function buildColorMap(
   });
 
   return colorsByPlayer;
+}
+
+function snakeRenderKey(playerId: string): string {
+  return `snake:${playerId}`;
+}
+
+function snakeSegmentRenderKey(playerId: string, index: number): string {
+  return `${snakeRenderKey(playerId)}:segment:${index}`;
+}
+
+function foodRenderKey(ownerPlayerId: string, cell: Cell): string {
+  return `food:${ownerPlayerId}:${cell.x}:${cell.y}`;
 }
 
 function lerpPoint(from: Cell, to: Cell, alpha: number): ProjectedPoint {

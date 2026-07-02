@@ -1,23 +1,19 @@
 import { Injectable } from '@angular/core';
 
-import { Board, Cell } from '../../../core/realtime/protocol.models';
+import { Board } from '../../../core/realtime/protocol.models';
 import { ProjectedPoint } from '../netcode/projection-engine';
+import {
+  cellCenter,
+  computeGameFieldLayout,
+  GameFieldLayout,
+  pointTopLeft,
+} from './game-field-layout';
 import { GameBoardRenderModel, RenderFood, RenderSnake } from './snake-sprite.projector';
 
 export interface CanvasRendererOptions {
   cssWidth?: number;
   cssHeight?: number;
   devicePixelRatio?: number;
-}
-
-interface BoardLayout {
-  cssWidth: number;
-  cssHeight: number;
-  originX: number;
-  originY: number;
-  tileSize: number;
-  boardWidth: number;
-  boardHeight: number;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -57,7 +53,7 @@ export class CanvasGameRenderer {
     context: CanvasRenderingContext2D,
     board: Board,
     options: CanvasRendererOptions,
-  ): BoardLayout {
+  ): GameFieldLayout {
     const rect = canvas.getBoundingClientRect();
     const cssWidth = Math.max(1, options.cssWidth ?? rect.width ?? canvas.clientWidth ?? 1);
     const cssHeight = Math.max(1, options.cssHeight ?? rect.height ?? canvas.clientHeight ?? 1);
@@ -77,28 +73,15 @@ export class CanvasGameRenderer {
     context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
     context.clearRect(0, 0, cssWidth, cssHeight);
 
-    const padding = Math.min(18, Math.max(8, Math.min(cssWidth, cssHeight) * 0.04));
-    const tileSize = Math.max(
-      1,
-      Math.min((cssWidth - padding * 2) / board.width, (cssHeight - padding * 2) / board.height),
-    );
-    const boardWidth = tileSize * board.width;
-    const boardHeight = tileSize * board.height;
-
-    return {
+    return computeGameFieldLayout(board, {
       cssWidth,
       cssHeight,
-      originX: (cssWidth - boardWidth) / 2,
-      originY: (cssHeight - boardHeight) / 2,
-      tileSize,
-      boardWidth,
-      boardHeight,
-    };
+    });
   }
 
   private drawBoard(
     context: CanvasRenderingContext2D,
-    layout: BoardLayout,
+    layout: GameFieldLayout,
     board: Board,
   ): void {
     context.fillStyle = '#f4f7f2';
@@ -140,11 +123,11 @@ export class CanvasGameRenderer {
 
   private drawFood(
     context: CanvasRenderingContext2D,
-    layout: BoardLayout,
+    layout: GameFieldLayout,
     board: Board,
     food: RenderFood,
   ): void {
-    const center = this.cellCenter(food.cell, layout, board);
+    const center = cellCenter(food.cell, layout, board);
 
     context.save();
     context.fillStyle = food.color;
@@ -159,7 +142,7 @@ export class CanvasGameRenderer {
 
   private drawSnakes(
     context: CanvasRenderingContext2D,
-    layout: BoardLayout,
+    layout: GameFieldLayout,
     board: Board,
     snakes: RenderSnake[],
   ): void {
@@ -177,7 +160,7 @@ export class CanvasGameRenderer {
 
   private drawSnake(
     context: CanvasRenderingContext2D,
-    layout: BoardLayout,
+    layout: GameFieldLayout,
     board: Board,
     snake: RenderSnake,
   ): void {
@@ -200,7 +183,7 @@ export class CanvasGameRenderer {
 
   private drawWrappedSegment(
     context: CanvasRenderingContext2D,
-    layout: BoardLayout,
+    layout: GameFieldLayout,
     board: Board,
     segment: ProjectedPoint,
     snake: RenderSnake,
@@ -213,7 +196,7 @@ export class CanvasGameRenderer {
 
     for (const offsetY of [-board.height, 0, board.height]) {
       for (const offsetX of [-board.width, 0, board.width]) {
-        const topLeft = this.pointTopLeft(
+        const topLeft = pointTopLeft(
           {
             x: segment.x + offsetX,
             y: segment.y + offsetY,
@@ -231,25 +214,5 @@ export class CanvasGameRenderer {
         }
       }
     }
-  }
-
-  private pointTopLeft(
-    point: ProjectedPoint,
-    layout: BoardLayout,
-    board: Board,
-  ): ProjectedPoint {
-    return {
-      x: layout.originX + point.x * layout.tileSize,
-      y: layout.originY + (board.height - 1 - point.y) * layout.tileSize,
-    };
-  }
-
-  private cellCenter(cell: Cell, layout: BoardLayout, board: Board): ProjectedPoint {
-    const topLeft = this.pointTopLeft(cell, layout, board);
-
-    return {
-      x: topLeft.x + layout.tileSize / 2,
-      y: topLeft.y + layout.tileSize / 2,
-    };
   }
 }

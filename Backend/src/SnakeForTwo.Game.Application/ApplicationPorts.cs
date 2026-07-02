@@ -39,6 +39,14 @@ public interface IGameMetrics
     void RecordMalformedMessage();
 
     void RecordRateLimitedMessage();
+
+    void RecordRenderDiagnosticsBatch(int frameCount, string reason);
+
+    void RecordRenderDiagnosticsFrame(
+        long renderTickDelta,
+        double frameServerLeadMs,
+        double receivedFrameLeadMs,
+        double estimatedServerOffsetMs);
 }
 
 public sealed class NullRoomLifecycleLogger : IRoomLifecycleLogger
@@ -115,6 +123,18 @@ public sealed class NullGameMetrics : IGameMetrics
     }
 
     public void RecordRateLimitedMessage()
+    {
+    }
+
+    public void RecordRenderDiagnosticsBatch(int frameCount, string reason)
+    {
+    }
+
+    public void RecordRenderDiagnosticsFrame(
+        long renderTickDelta,
+        double frameServerLeadMs,
+        double receivedFrameLeadMs,
+        double estimatedServerOffsetMs)
     {
     }
 }

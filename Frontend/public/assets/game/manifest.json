@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "description": "Placeholder game-field assets for the PixiJS renderer foundation.",
+  "sprites": {
+    "snakeHead": "assets/game/snake-head.svg",
+    "snakeBody": "assets/game/snake-body.svg",
+    "snakeTail": "assets/game/snake-tail.svg",
+    "food": "assets/game/food.svg",
+    "grassTile": "assets/game/grass-tile.svg"
+  },
+  "tileSize": 64
+}

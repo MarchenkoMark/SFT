@@ -7,6 +7,7 @@ import { ClockSyncService } from '../clock/clock-sync.service';
 import { RealtimeGatewayService } from './realtime-gateway.service';
 import { RoomSessionStorageService } from './room-session-storage.service';
 import { ConnectionStore } from '../state/connection.store';
+import { RenderDiagnosticsReporterService } from '../../features/game/diagnostics/render-diagnostics-reporter.service';
 import { GameSessionStore } from '../../features/game/state/game-session.store';
 import { LocalPredictionStore } from '../../features/game/state/local-prediction.store';
 import { RoomStore } from '../../features/room/room.store';
@@ -21,6 +22,7 @@ export class ServerMessageDispatcherService {
     private readonly router: Router,
     private readonly clockSync: ClockSyncService,
     private readonly connectionStore: ConnectionStore,
+    private readonly renderDiagnosticsReporter: RenderDiagnosticsReporterService,
     private readonly roomSessionStorage: RoomSessionStorageService,
     private readonly roomStore: RoomStore,
     private readonly gameSessionStore: GameSessionStore,
@@ -81,6 +83,7 @@ export class ServerMessageDispatcherService {
         return;
 
       case 'gameFinished':
+        this.renderDiagnosticsReporter.sendPending('gameFinished');
         this.localPredictionStore.reset();
         this.gameSessionStore.finished(message);
         return;

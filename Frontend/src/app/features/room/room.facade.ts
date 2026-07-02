@@ -7,6 +7,7 @@ import { RealtimeGatewayService } from '../../core/realtime/realtime-gateway.ser
 import { RoomSessionStorageService } from '../../core/realtime/room-session-storage.service';
 import { ConnectionQuery } from '../../core/state/connection.query';
 import { ConnectionStore } from '../../core/state/connection.store';
+import { RenderDiagnosticsReporterService } from '../game/diagnostics/render-diagnostics-reporter.service';
 import { GameSessionQuery } from '../game/state/game-session.query';
 import { GameSessionStore } from '../game/state/game-session.store';
 import { RoomQuery } from './room.query';
@@ -23,6 +24,7 @@ export class RoomFacade {
     private readonly gateway: RealtimeGatewayService,
     private readonly gameSessionQuery: GameSessionQuery,
     private readonly gameSessionStore: GameSessionStore,
+    private readonly renderDiagnosticsReporter: RenderDiagnosticsReporterService,
     private readonly roomQuery: RoomQuery,
     private readonly roomSessionStorage: RoomSessionStorageService,
     private readonly roomStore: RoomStore,
@@ -122,6 +124,7 @@ export class RoomFacade {
   leaveRoom(): void {
     const roomId = this.roomQuery.snapshot.room?.roomId;
     if (roomId) {
+      this.renderDiagnosticsReporter.sendPending('leaveRoom');
       this.gateway.send({ type: 'leaveRoom', roomId });
       this.roomSessionStorage.clearToken(roomId);
     }
